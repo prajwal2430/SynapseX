@@ -5,7 +5,7 @@
  * (distinguishing 401/403/404/500 vs. Network/ECONNREFUSED errors), and typed API methods.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://synapsex-qdhb.onrender.com/api'
 const TOKEN_KEY = 'adeip_auth_token'
 const USER_KEY = 'adeip_auth_user'
 
@@ -104,7 +104,7 @@ async function request(endpoint, options = {}) {
     }
     // Network errors (Failed to fetch, proxy connection refused, CORS, offline)
     throw new ApiError(
-      'Unable to connect to the ADEIP server. Please ensure the backend service is running on http://localhost:8000.',
+      'Unable to connect to the ADEIP server. Please ensure the backend service is running on https://synapsex-qdhb.onrender.com.',
       0,
       null,
       true
@@ -303,10 +303,9 @@ export const api = {
 
   // ── WebSocket URL Resolver ──
   getWebSocketUrl: (caseId) => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
+    const wsBase = import.meta.env.VITE_WS_BASE_URL || (API_BASE.startsWith('http') ? API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '') : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`)
     const token = authStorage.getToken()
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
-    return `${protocol}//${host}/ws/cases/${caseId}${tokenParam}`
+    return `${wsBase}/ws/cases/${caseId}${tokenParam}`
   },
 }
