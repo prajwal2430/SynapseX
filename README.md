@@ -11,7 +11,7 @@
 
 **An autonomous, multi-agent digital forensics and cyber investigation intelligence platform that transforms raw, fragmented evidence into unified, explainable, and cryptographically verified investigative leads.**
 
-[Explore Features](#-key-features) • [Investigation Workflow](#-system-architecture--investigation-workflow) • [Project Motive](#-project-motive--problem-statement) • [Quick Start](#-quick-start-guide) • [Contributing](CONTRIBUTING.md)
+[Explore Features](#-key-features) • [Investigation Workflow](#-system-architecture--investigation-workflow) • [Project Motive](#-project-motive--problem-statement) • [Quick Start](#-quick-start-guide) • [Requirements](REQUIREMENTS.md) • [Contributing](CONTRIBUTING.md)
 
 </div>
 
