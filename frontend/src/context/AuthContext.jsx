@@ -89,6 +89,14 @@ export function AuthProvider({ children }) {
     setIsAuthenticated(false)
   }
 
+  const updateUser = (updatedData) => {
+    setUser((prev) => {
+      const newObj = prev ? { ...prev, ...updatedData } : { ...updatedData }
+      authStorage.setUser(newObj)
+      return newObj
+    })
+  }
+
   const value = {
     user,
     token,
@@ -100,6 +108,7 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    updateUser,
     verifySession,
     checkBackendHealth,
   }

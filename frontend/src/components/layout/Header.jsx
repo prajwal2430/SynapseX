@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import IdentityModal from '../auth/IdentityModal'
 import {
   Menu,
   PanelLeftClose,
@@ -12,22 +13,29 @@ import {
   Wifi,
   Shield,
   AlertTriangle,
+  User,
+  Edit3,
+  Activity,
+  Lock,
+  ShieldAlert,
+  Sliders,
+  LogOut,
 } from 'lucide-react'
 import './Header.css'
 
 const PAGE_TITLES = {
-  '/dashboard':           { title: 'Dashboard',           subtitle: 'System overview & active intelligence' },
-  '/investigations':      { title: 'Investigations',      subtitle: 'Active & archived case management' },
-  '/evidence':            { title: 'Evidence',            subtitle: 'Digital evidence repository & chain of custody' },
-  '/live-investigation':  { title: 'Live Investigation',  subtitle: 'Real-time monitoring & active session', live: true },
-  '/timeline':            { title: 'Timeline',            subtitle: 'Chronological event reconstruction' },
-  '/knowledge-graph':     { title: 'Knowledge Graph',     subtitle: 'Entity relationship visualization' },
-  '/ai-agents':           { title: 'AI Agents',           subtitle: 'Autonomous analysis agent fleet' },
-  '/ai-findings':         { title: 'AI Findings & Reasoning', subtitle: 'Explainable evidence-backed hypothesis synthesis' },
-  '/intelligence-chat':   { title: 'Intelligence Chat',   subtitle: 'AI-assisted investigation dialogue' },
-  '/reports':             { title: 'Reports',             subtitle: 'Forensic reports & export management' },
-  '/chain-of-custody':    { title: 'Chain of Custody',    subtitle: 'Evidence integrity & custody log' },
-  '/settings':            { title: 'Settings',            subtitle: 'Platform configuration & preferences' },
+  '/dashboard': { title: 'Dashboard', subtitle: 'System overview & active intelligence' },
+  '/investigations': { title: 'Investigations', subtitle: 'Active & archived case management' },
+  '/evidence': { title: 'Evidence', subtitle: 'Digital evidence repository & chain of custody' },
+  '/live-investigation': { title: 'Live Investigation', subtitle: 'Real-time monitoring & active session', live: true },
+  '/timeline': { title: 'Timeline', subtitle: 'Chronological event reconstruction' },
+  '/knowledge-graph': { title: 'Knowledge Graph', subtitle: 'Entity relationship visualization' },
+  '/ai-agents': { title: 'AI Agents', subtitle: 'Autonomous analysis agent fleet' },
+  '/ai-findings': { title: 'AI Findings & Reasoning', subtitle: 'Explainable evidence-backed hypothesis synthesis' },
+  '/intelligence-chat': { title: 'Intelligence Chat', subtitle: 'AI-assisted investigation dialogue' },
+  '/reports': { title: 'Reports', subtitle: 'Forensic reports & export management' },
+  '/chain-of-custody': { title: 'Chain of Custody', subtitle: 'Evidence integrity & custody log' },
+  '/settings': { title: 'Settings', subtitle: 'Platform configuration & preferences' },
 }
 
 // Mock alerts for the notification badge
@@ -44,12 +52,12 @@ function LiveClock() {
 
   const timeStr = mode === 'IST'
     ? time.toLocaleTimeString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
+      timeZone: 'Asia/Kolkata',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
     : time.toUTCString().slice(17, 25)
 
   return (
@@ -66,15 +74,38 @@ function LiveClock() {
   )
 }
 
+/**
+ * Safely coerce any value to a trimmed string.
+ * Returns `fallback` when `val` is null / undefined / empty / not a string.
+ */
+function safeStr(val, fallback = '') {
+  if (val == null) return fallback                    // null | undefined
+  const s = typeof val === 'string' ? val : String(val)
+  return s.trim() || fallback                         // empty-after-trim → fallback
+}
+
 export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpenSearch }) {
   const { pathname } = useLocation()
   const page = PAGE_TITLES[pathname] || { title: 'SynapseX', subtitle: 'Autonomous Digital Evidence Intelligence Platform' }
   const [searchFocused, setSearchFocused] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [identityModalOpen, setIdentityModalOpen] = useState(false)
+  const [identityInitialTab, setIdentityInitialTab] = useState('profile')
   const { user: currentUser, logout } = useAuth()
 
+  const handleOpenIdentityTab = (tab) => {
+    setUserMenuOpen(false)
+    setIdentityInitialTab(tab)
+    setIdentityModalOpen(true)
+  }
 
+  // ── Robust derived string properties ──
+  // Every property is type-checked, trimmed, and given a safe fallback.
+  const userFullName = safeStr(currentUser?.full_name, 'Manali Patil')
+  const userEmail = safeStr(currentUser?.email, 'patilmanali@gmail.com')
+  const userRole = safeStr(currentUser?.role, 'investigator').toUpperCase()
+  const initials = userFullName.slice(0, 2).toUpperCase()
 
   return (
     <header className="app-header">
@@ -116,7 +147,7 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
       </div>
 
       {/* ── Center: Search ── */}
-      <div 
+      <div
         className={`header-search-wrap ${searchFocused ? 'focused' : ''}`}
         onClick={onOpenSearch}
       >
@@ -178,8 +209,8 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
               </div>
               {[
                 { level: 'critical', msg: 'Anomalous exfiltration pattern detected in CASE-2024-0047', time: '2m ago' },
-                { level: 'high',    msg: 'New entity correlation found — suspect network node', time: '14m ago' },
-                { level: 'medium',  msg: 'Evidence hash mismatch on artifact EVD-0821', time: '1h ago' },
+                { level: 'high', msg: 'New entity correlation found — suspect network node', time: '14m ago' },
+                { level: 'medium', msg: 'Evidence hash mismatch on artifact EVD-0821', time: '1h ago' },
               ].map((n, i) => (
                 <div key={i} className={`notif-item notif-item--${n.level}`}>
                   <div className="notif-dot" />
@@ -202,38 +233,103 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
             aria-label="User menu"
             onClick={() => setUserMenuOpen(o => !o)}
           >
-            <div className="header-avatar">{currentUser?.full_name ? currentUser.full_name.slice(0, 2).toUpperCase() : 'SA'}</div>
+            <div className="header-avatar">{initials}</div>
             <div className="header-user-info desktop-only">
-              <span className="header-user-name">{currentUser?.full_name || 'Sr. Analyst'}</span>
-              <span className="header-user-role">{currentUser?.role?.toUpperCase() || 'INVESTIGATOR'}</span>
+              <span className="header-user-name">{userFullName}</span>
+              <span className="header-user-role">{userRole}</span>
             </div>
             <ChevronDown size={12} className="desktop-only" style={{ color: 'var(--gray-500)' }} />
           </button>
 
           {userMenuOpen && (
-            <div className="notif-dropdown" style={{ width: 240, right: 0 }}>
+            <div className="notif-dropdown identity-dropdown" style={{ width: 280, right: 0 }}>
               <div className="notif-header">
                 <span className="notif-title">Authenticated Identity</span>
-                <span className="badge badge--info">{currentUser?.role || 'Investigator'}</span>
-              </div>
-              <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-subtle, rgba(255,255,255,0.08))' }}>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{currentUser?.full_name || 'Lead Investigator'}</p>
-                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-secondary)' }}>{currentUser?.email || 'analyst@adeip.local'}</p>
-              </div>
-              <div
-                className="notif-footer"
-                style={{ cursor: 'pointer', textAlign: 'center' }}
-                onClick={() => {
-                  logout()
-                }}
-              >
-                Sign Out / End Session
+                <span className="badge badge--info">{userRole}</span>
               </div>
 
+              <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-subtle, rgba(255,255,255,0.08))', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="header-avatar" style={{ width: 34, height: 34, fontSize: 13 }}>
+                  {initials}
+                </div>
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{userFullName}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-secondary)' }}>{userEmail}</p>
+                </div>
+              </div>
+
+              <div className="identity-menu-list">
+                <button
+                  className="identity-menu-item"
+                  onClick={() => handleOpenIdentityTab('profile')}
+                >
+                  <User size={15} className="menu-icon" />
+                  <span>View Profile</span>
+                </button>
+
+                <button
+                  className="identity-menu-item"
+                  onClick={() => handleOpenIdentityTab('edit')}
+                >
+                  <Edit3 size={15} className="menu-icon" />
+                  <span>Edit Profile</span>
+                </button>
+
+                <button
+                  className="identity-menu-item"
+                  onClick={() => handleOpenIdentityTab('activity')}
+                >
+                  <Activity size={15} className="menu-icon" />
+                  <span>View Recent Activity</span>
+                </button>
+
+                <button
+                  className="identity-menu-item"
+                  onClick={() => handleOpenIdentityTab('security')}
+                >
+                  <Lock size={15} className="menu-icon" />
+                  <span>Security & Active Sessions</span>
+                </button>
+
+                <button
+                  className="identity-menu-item"
+                  onClick={() => handleOpenIdentityTab('permissions')}
+                >
+                  <ShieldAlert size={15} className="menu-icon" />
+                  <span>View Role & Permissions</span>
+                </button>
+
+                <button
+                  className="identity-menu-item"
+                  onClick={() => handleOpenIdentityTab('preferences')}
+                >
+                  <Sliders size={15} className="menu-icon" />
+                  <span>Account Preferences</span>
+                </button>
+
+                <div className="identity-menu-divider" />
+
+                <button
+                  className="identity-menu-item identity-menu-item--danger"
+                  onClick={() => {
+                    setUserMenuOpen(false)
+                    logout()
+                  }}
+                >
+                  <LogOut size={15} className="menu-icon" />
+                  <span> Sign Out</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      <IdentityModal
+        isOpen={identityModalOpen}
+        onClose={() => setIdentityModalOpen(false)}
+        initialTab={identityInitialTab}
+      />
     </header>
   )
 }

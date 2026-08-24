@@ -400,6 +400,65 @@
   }
 }
 
+/* ── Identity Dropdown Menu Items ── */
+.identity-menu-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 2px;
+}
+
+.identity-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md, 6px);
+  color: var(--gray-200, #e2e8f0);
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast, 150ms ease), color var(--transition-fast, 150ms ease);
+}
+
+.identity-menu-item:hover {
+  background: rgba(46, 127, 255, 0.1);
+  color: var(--blue-300, #93c5fd);
+}
+
+.identity-menu-item .menu-icon {
+  color: var(--gray-400, #94a3b8);
+  flex-shrink: 0;
+  transition: color var(--transition-fast, 150ms ease);
+}
+
+.identity-menu-item:hover .menu-icon {
+  color: var(--blue-400, #60a5fa);
+}
+
+.identity-menu-divider {
+  height: 1px;
+  background: var(--border-subtle, rgba(255,255,255,0.08));
+  margin: 4px 6px;
+}
+
+.identity-menu-item--danger {
+  color: var(--alert-critical, #f87171);
+}
+
+.identity-menu-item--danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.identity-menu-item--danger:hover .menu-icon {
+  color: #fca5a5;
+}
+
 @media (max-width: 480px) {
   .header-search-wrap { display: none; }
 
