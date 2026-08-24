@@ -88,7 +88,7 @@ export default function Login() {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.isNetworkError) {
-          setErrorMessage('Unable to connect to the ADEIP server. Please ensure the backend service is running on http://localhost:8000.')
+          setErrorMessage('Unable to connect to the ADEIP server. Please ensure the backend service is running on https://synapsex-qdhb.onrender.com.')
         } else if (err.status === 401) {
           setErrorMessage('Incorrect email or password. Please verify your credentials.')
         } else if (err.status === 403) {
@@ -140,7 +140,7 @@ export default function Login() {
           ) : backendOffline ? (
             <div className="health-status health-status--offline">
               <AlertTriangle size={12} />
-              <span>ADEIP Backend is currently unavailable (http://localhost:8000)</span>
+              <span>ADEIP Backend is currently unavailable (https://synapsex-qdhb.onrender.com)</span>
               <button
                 type="button"
                 className="health-retry-btn"
