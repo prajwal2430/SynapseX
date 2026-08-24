@@ -20,7 +20,7 @@ export default function ProtectedRoute({ children }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--bg-primary, #090d16)', padding: 24 }}>
         <ErrorView
           message="ADEIP Backend Server Offline"
-          error="Unable to connect to the ADEIP server at http://localhost:8000. Please ensure the backend FastAPI service is running."
+          error="Unable to connect to the ADEIP server at https://synapsex-qdhb.onrender.com. Please ensure the backend FastAPI service is running."
           onRetry={async () => {
             await checkBackendHealth()
             await verifySession()
