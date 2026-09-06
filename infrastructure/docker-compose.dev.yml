@@ -1,0 +1,60 @@
+# ==============================================================================
+# SynapseX Development Overlay - Docker Compose
+#
+# Extends docker-compose.yml with developer ergonomics:
+#   - NestJS debug port (Node.js inspector on 9229)
+#   - Verbose logging across all services
+#   - Vite HMR polling for reliable hot-reload on Windows/WSL2
+#   - Mongo Express web UI for database inspection
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # API - Debug Mode with Node.js Inspector
+  # ----------------------------------------------------------------------------
+  api:
+    command: ["npm", "run", "start:debug"]
+    ports:
+      - "9229:9229"  # Node.js debug/inspect port
+    environment:
+      LOG_LEVEL: verbose
+      NODE_OPTIONS: "--inspect=0.0.0.0:9229"
+
+  # ----------------------------------------------------------------------------
+  # AI Service - Verbose Logging & Auto-Reload
+  # ----------------------------------------------------------------------------
+  ai-service:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
+    environment:
+      LOG_LEVEL: DEBUG
+
+  # ----------------------------------------------------------------------------
+  # Client - Vite HMR Polling (Windows / WSL2 compatibility)
+  # ----------------------------------------------------------------------------
+  client:
+    environment:
+      CHOKIDAR_USEPOLLING: "true"  # Reliable file watching on Windows
+      VITE_HMR_HOST: localhost
+
+  # ----------------------------------------------------------------------------
+  # Mongo Express - Web-Based MongoDB Admin UI
+  # ----------------------------------------------------------------------------
+  mongo-express:
+    image: mongo-express:1.0
+    container_name: synapsex-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_ROOT_USER:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASSWORD:-synapsex_admin_password}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-synapsex_admin_password}@mongodb:27017/
+      ME_CONFIG_BASICAUTH: "false"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - synapsex-net
