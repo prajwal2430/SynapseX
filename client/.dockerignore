@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Build output
+dist/
+
+# Version control
+.git/
+.gitignore
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (not needed in image)
+README.md
+CONTRIBUTING.md
+*.md
+
+# Environment files (secrets — never bake into images)
+.env
+.env.*
+!.env.example
+
+# OS files
+Thumbs.db
+.DS_Store
