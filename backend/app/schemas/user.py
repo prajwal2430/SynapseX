@@ -9,8 +9,16 @@ from app.models.user import UserRole
 class UserBase(BaseModel):
     """Shared base properties for a user."""
     full_name: str = Field(..., min_length=2, max_length=150, description="Full name of the user")
-    email: EmailStr = Field(..., description="Unique email address")
+    email: str = Field(..., min_length=3, description="Unique email address")
     role: UserRole = Field(default=UserRole.INVESTIGATOR, description="Platform RBAC role")
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        v_clean = v.strip().lower()
+        if "@" not in v_clean or "." not in v_clean.split("@")[-1]:
+            raise ValueError("Invalid email address format")
+        return v_clean
 
 
 class UserRegisterRequest(UserBase):
@@ -36,7 +44,7 @@ class UserRegisterRequest(UserBase):
 
 class UserLoginRequest(BaseModel):
     """Request payload for user login."""
-    email: EmailStr = Field(..., description="Registered email address")
+    email: str = Field(..., min_length=3, description="Registered email address")
     password: str = Field(..., min_length=1, description="Account password")
 
 
