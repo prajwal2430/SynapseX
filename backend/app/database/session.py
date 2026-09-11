@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Generator
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
@@ -36,7 +37,9 @@ try:
     logger.info(f"[Database] Primary database connected successfully: {active_db_url.split('@')[-1] if '@' in active_db_url else active_db_url}")
 except Exception as primary_exc:
     if not active_db_url.startswith("sqlite"):
-        fallback_url = "sqlite:///./adeip.db"
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        db_path = os.path.join(backend_dir, "adeip.db")
+        fallback_url = f"sqlite:///{db_path.replace(os.sep, '/')}"
         logger.warning(
             f"[Database] Primary database connection failed ({primary_exc}). "
             f"Falling back to local SQLite engine ({fallback_url})."

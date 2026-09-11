@@ -233,3 +233,71 @@ def test_pdf_report_rendering(rich_investigation_state):
     assert isinstance(pdf_bytes, bytes)
     assert len(pdf_bytes) > 500
     assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_renderer_resilience_with_none_values_and_unicode():
+    """Verify that _render_html_report and _render_pdf_report gracefully handle None confidence, None scores, and unicode symbols."""
+    from app.services.report_service import ReportService
+
+    edge_data = {
+        "disclaimer": "AI-Assisted Draft — Requires Human Investigator Review",
+        "case_summary": {
+            "case_number": "CASE-TEST-001",
+            "title": "Unicode Test: Process Injection → Exfiltration",
+            "description": "Observed lateral movement with arrows: 10.0.0.1 -> 10.0.0.2.",
+            "priority": "high",
+            "status": "active",
+        },
+        "evidence_inventory": [
+            {
+                "id": 1,
+                "evidence_number": "EVD-001",
+                "original_filename": "artifact_log.evtx",
+                "mime_type": "application/octet-stream",
+                "processing_status": "completed",
+            }
+        ],
+        "evidence_integrity_status": [],
+        "investigation_timeline": [],
+        "entity_relationships": {"total_entities": 0, "entities_by_type": {}},
+        "correlations": [
+            {
+                "correlation_id": "CORR-01",
+                "title": "Time Correlation",
+                "description": "Suspicious login correlation",
+                "signal_type": "auth_anomaly",
+                "score": None,  # None score test
+                "supporting_evidence_ids": [1],
+            }
+        ],
+        "ai_assisted_findings": [
+            {
+                "finding_id": "FND-01",
+                "title": "Unusual Process Execution → PowerShell",
+                "category": "Execution",
+                "description": "PowerShell invoked with encoded arguments.",
+                "confidence": None,  # None confidence test
+                "review_status": "pending_review",
+            }
+        ],
+        "supporting_evidence": [],
+        "alternative_explanations": ["Scheduled maintenance script."],
+        "recommended_verification": ["Verify scheduled tasks on host."],
+        "investigator_review_status": [],
+        "limitations": ["Limited forensic telemetry."],
+    }
+
+    # Verify HTML does not throw TypeError on None * 100
+    html = ReportService._render_html_report(edge_data)
+    assert "Unusual Process Execution" in html
+    assert "85%" in html  # fallback default
+
+    # Verify PDF does not throw TypeError on float(None) or FPDF UnicodeEncodeError
+    pdf_bytes = ReportService._render_pdf_report(
+        data=edge_data,
+        title="Resilience Test Dossier",
+        report_id="RPT-EDGE-001",
+        case_id=1,
+    )
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes.startswith(b"%PDF")

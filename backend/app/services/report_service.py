@@ -11,7 +11,7 @@ import math
 import uuid
 from typing import Any, Dict, List, Optional
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from fpdf import FPDF
@@ -62,6 +62,10 @@ def _clean_pdf_text(val: Any) -> str:
         "\ufe0f": "",
         "\u2714": "[OK]",
         "\u2716": "[X]",
+        "\u2192": "->",
+        "\u2190": "<-",
+        "\u21d2": "=>",
+        "\u00a0": " ",
     }
     for k, v in replacements.items():
         text = text.replace(k, v)
@@ -135,12 +139,12 @@ class ReportService:
         ) or "<tr><td colspan='5'>No timeline events logged.</td></tr>"
 
         findings_cards = "".join(
-            f"<div class='card'><h4>{f.get('finding_id')}: {f.get('title')}</h4><p>{f.get('description')}</p><p><b>Category:</b> {f.get('category')} | <b>Confidence:</b> {int(f.get('confidence', 0.85)*100)}% | <b>Status:</b> <span class='badge'>{f.get('review_status')}</span></p><p><small><b>Referenced Evidence IDs:</b> {f.get('referenced_evidence_ids')} | <b>Event IDs:</b> {f.get('referenced_event_ids')}</small></p></div>"
+            f"<div class='card'><h4>{f.get('finding_id')}: {f.get('title')}</h4><p>{f.get('description')}</p><p><b>Category:</b> {f.get('category')} | <b>Confidence:</b> {int((f.get('confidence') if f.get('confidence') is not None else 0.85)*100)}% | <b>Status:</b> <span class='badge'>{f.get('review_status')}</span></p><p><small><b>Referenced Evidence IDs:</b> {f.get('referenced_evidence_ids')} | <b>Event IDs:</b> {f.get('referenced_event_ids')}</small></p></div>"
             for f in findings
         ) or "<p>No AI findings formulated.</p>"
 
         correlations_cards = "".join(
-            f"<div class='card'><h4>{c.get('correlation_id')}: {c.get('title')}</h4><p>{c.get('description')}</p><p><b>Signal:</b> {c.get('signal_type')} | <b>Score:</b> {int(c.get('score', 0)*100)}%</p><small><b>Supporting Evidence:</b> {c.get('supporting_evidence_ids')}</small></div>"
+            f"<div class='card'><h4>{c.get('correlation_id')}: {c.get('title')}</h4><p>{c.get('description')}</p><p><b>Signal:</b> {c.get('signal_type')} | <b>Score:</b> {int((c.get('score') if c.get('score') is not None else (c.get('correlation_score') if c.get('correlation_score') is not None else 0.85))*100)}%</p><small><b>Supporting Evidence:</b> {c.get('supporting_evidence_ids')}</small></div>"
             for c in correlations
         ) or "<p>No correlations recorded.</p>"
 
@@ -398,7 +402,10 @@ class ReportService:
                 fid = f.get("finding_id", "FND")
                 ftitle = f.get("title", "")
                 cat = f.get("category", "General")
-                conf = int(float(f.get("confidence", 0.85)) * 100)
+                conf_val = f.get("confidence")
+                if conf_val is None:
+                    conf_val = 0.85
+                conf = int(float(conf_val) * 100)
                 rev = str(f.get("review_status", "pending")).upper()
 
                 pdf.cell(0, 6, _clean_pdf_text(f"[{fid}] {ftitle}"), border="LTR", fill=True, new_x="LMARGIN", new_y="NEXT")
@@ -532,11 +539,11 @@ class ReportService:
 
         findings_stmt = select(InvestigationFindingModel).where(InvestigationFindingModel.case_id == case_id)
         if req.finding_ids:
+            conditions = [InvestigationFindingModel.finding_id.in_(req.finding_ids)]
             int_ids = [int(x) for x in req.finding_ids if str(x).isdigit()]
-            findings_stmt = findings_stmt.where(
-                (InvestigationFindingModel.finding_id.in_(req.finding_ids)) |
-                (InvestigationFindingModel.id.in_(int_ids))
-            )
+            if int_ids:
+                conditions.append(InvestigationFindingModel.id.in_(int_ids))
+            findings_stmt = findings_stmt.where(or_(*conditions))
         findings_records = list(db.scalars(findings_stmt).all())
         recommendations_records = list(
             db.scalars(select(InvestigationRecommendationModel).where(InvestigationRecommendationModel.case_id == case_id)).all()
@@ -553,7 +560,8 @@ class ReportService:
                 "processing_status": ev.processing_status.value,
                 "integrity_status": ev.integrity_status.value,
                 "last_verified_at": ev.last_verified_at.isoformat() if ev.last_verified_at else None,
-                "uploaded_at": ev.uploaded_at.isoformat(),
+                "uploaded_at": ev.uploaded_at.isoformat() if ev.uploaded_at else None,
+                "created_at": ev.uploaded_at.isoformat() if ev.uploaded_at else None,
             }
             for ev in evidence_items
         ]
@@ -654,7 +662,7 @@ class ReportService:
             report_format=req.report_format,
             disclaimer=_MANDATORY_DISCLAIMER,
             report_data=json.dumps(structured_data),
-            html_content=rendered_html if req.report_format in (ReportFormat.HTML, ReportFormat.PDF) else None,
+            html_content=rendered_html,
             generated_by=current_user.id,
         )
         db.add(report_model)
@@ -812,6 +820,8 @@ class ReportService:
         raw_data = json.loads(model.report_data) if model.report_data else {}
         author_name = model.author.full_name if model.author else None
 
+        html_content = model.html_content or cls._render_html_report(raw_data)
+
         return ReportDetailResponse(
             id=model.id,
             report_id=model.report_id,
@@ -824,7 +834,7 @@ class ReportService:
             author_name=author_name,
             created_at=model.created_at,
             report_data=StructuredReportData(**raw_data),
-            html_content=model.html_content,
+            html_content=html_content,
         )
 
     @classmethod

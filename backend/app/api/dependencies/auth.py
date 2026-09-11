@@ -1,4 +1,5 @@
-from fastapi import Depends, HTTPException, status
+from typing import Optional
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -7,16 +8,18 @@ from app.models.user import User
 from app.security.jwt import decode_access_token
 from app.services.auth_service import AuthService
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """
     Reusable FastAPI dependency to extract, verify, and resolve the authenticated User.
-    Throws a generic 401 Unauthorized exception on invalid or expired tokens.
+    Accepts JWT token via Authorization Bearer header OR ?token= query parameter
+    for direct browser viewing and downloads.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -24,7 +27,11 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    payload = decode_access_token(token)
+    resolved_token = token or request.query_params.get("token")
+    if not resolved_token:
+        raise credentials_exception
+
+    payload = decode_access_token(resolved_token)
     if not payload:
         raise credentials_exception
 

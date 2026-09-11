@@ -71,7 +71,7 @@ def report_agent(state: InvestigationState) -> Dict[str, Any]:
             "file_size": ev.get("file_size"),
             "mime_type": ev.get("mime_type"),
             "processing_status": ev.get("processing_status", "completed"),
-            "created_at": ev.get("created_at"),
+            "created_at": ev.get("created_at") or ev.get("uploaded_at"),
         }
         for ev in evidence_items
     ]
