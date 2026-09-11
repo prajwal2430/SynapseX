@@ -1,0 +1,284 @@
+# ==============================================================================
+# SynapseX Development Infrastructure - Docker Compose
+# Multi-service composition for local enterprise development
+#
+# Usage:
+#   docker compose up --build          (full stack, foreground)
+#   docker compose up -d               (full stack, detached)
+#   docker compose up -d mongodb redis  (infra only, for local dev)
+#
+# With dev overlay:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. MongoDB - Primary Document Database
+  # ----------------------------------------------------------------------------
+  mongodb:
+    image: mongo:7.0
+    container_name: synapsex-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-synapsex_admin_password}
+      MONGO_INITDB_DATABASE: synapsex
+      # Passed to mongo-init.js via process.env
+      MONGO_APP_USER: ${MONGO_APP_USER:-synapsex_user}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:-synapsex_password}
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - synapsex-net
+
+  # ----------------------------------------------------------------------------
+  # 2. Redis - In-Memory Cache, BullMQ Message Broker & Socket Adapter
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: synapsex-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - synapsex-net
+
+  # ----------------------------------------------------------------------------
+  # 3. Neo4j - Forensic Knowledge Graph & Entity Relationships
+  # ----------------------------------------------------------------------------
+  neo4j:
+    image: neo4j:5.20-community
+    container_name: synapsex-neo4j
+    restart: unless-stopped
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474" # Neo4j Browser UI
+      - "${NEO4J_BOLT_PORT:-7687}:7687" # Bolt Protocol
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-synapsex_neo4j_password}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 25s
+    networks:
+      - synapsex-net
+
+  # ----------------------------------------------------------------------------
+  # 4. MinIO - S3-Compatible Local Object Storage for Evidence Files
+  # ----------------------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-08-03T04-33-23Z
+    container_name: synapsex-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"     # S3 API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001" # Web Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - synapsex-net
+
+  # ----------------------------------------------------------------------------
+  # 5. MinIO Bucket Provisioner (Runs once on startup)
+  # ----------------------------------------------------------------------------
+  minio-init:
+    image: minio/mc:RELEASE.2024-07-31T15-58-14Z
+    container_name: synapsex-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_HOST: minio
+      MINIO_INIT_PORT: "9000"
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set localminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      /usr/bin/mc mb --ignore-existing localminio/synapsex-evidence;
+      /usr/bin/mc mb --ignore-existing localminio/synapsex-reports;
+      /usr/bin/mc anonymous set none localminio/synapsex-evidence;
+      exit 0;
+      "
+    networks:
+      - synapsex-net
+
+  # ----------------------------------------------------------------------------
+  # 6. NestJS API - Main Business & Gateway Microservice
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: ../api
+      target: development
+    container_name: synapsex-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3001}:3001"
+    environment:
+      PORT: 3001
+      NODE_ENV: development
+      API_PREFIX: api
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      CORS_ORIGINS: http://localhost:${CLIENT_PORT:-3000},http://localhost:5173
+      MONGODB_URI: mongodb://${MONGO_APP_USER:-synapsex_user}:${MONGO_APP_PASSWORD:-synapsex_password}@mongodb:27017/synapsex?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET_EVIDENCE: synapsex-evidence
+      MINIO_BUCKET_REPORTS: synapsex-reports
+      AI_SERVICE_URL: http://ai-service:8000
+      AI_SERVICE_API_KEY: ${AI_SERVICE_API_KEY:-internal-dev-secret-token}
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-jwt-secret-for-local-testing-only}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-1d}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-insecure-refresh-secret-for-local-testing-only}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+    volumes:
+      - ../api:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - synapsex-net
+
+  # ----------------------------------------------------------------------------
+  # 7. AI Service - FastAPI + LangGraph Microservice
+  # ----------------------------------------------------------------------------
+  ai-service:
+    build:
+      context: ../ai-service
+    container_name: synapsex-ai-service
+    restart: unless-stopped
+    ports:
+      - "${AI_SERVICE_PORT:-8000}:8000"
+    environment:
+      PORT: 8000
+      APP_ENV: development
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      API_SECRET_KEY: ${AI_SERVICE_API_KEY:-internal-dev-secret-token}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-synapsex_neo4j_password}
+      MONGODB_URI: mongodb://${MONGO_APP_USER:-synapsex_user}:${MONGO_APP_PASSWORD:-synapsex_password}@mongodb:27017/synapsex?authSource=admin
+      MONGODB_DATABASE: synapsex
+      REDIS_URL: redis://redis:6379/0
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PRIMARY_LLM_MODEL: ${PRIMARY_LLM_MODEL:-gpt-4o}
+      FAST_LLM_MODEL: ${FAST_LLM_MODEL:-gpt-4o-mini}
+    volumes:
+      - ../ai-service:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - synapsex-net
+
+  # ----------------------------------------------------------------------------
+  # 8. Client - React + Vite Frontend
+  # ----------------------------------------------------------------------------
+  client:
+    build:
+      context: ../client
+      target: development
+    container_name: synapsex-client
+    restart: unless-stopped
+    ports:
+      - "${CLIENT_PORT:-3000}:3000"
+    environment:
+      VITE_API_BASE_URL: http://localhost:${API_PORT:-3001}/api
+      VITE_WS_BASE_URL: http://localhost:${API_PORT:-3001}
+    volumes:
+      - ../client:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - synapsex-net
+
+# ==============================================================================
+# Storage Volumes & Networks
+# ==============================================================================
+volumes:
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  synapsex-net:
+    driver: bridge

@@ -1,0 +1,39 @@
+# Version control
+.git/
+.gitignore
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test & quality artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+README.md
+*.md
+
+# Environment files (secrets — never bake into images)
+.env
+.env.*
+!.env.example
+
+# OS files
+Thumbs.db
+.DS_Store
