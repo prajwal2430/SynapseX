@@ -16,7 +16,9 @@ _MANDATORY_DISCLAIMER = "AI-Assisted Draft — Requires Human Investigator Revie
 class ReportGenerateRequest(BaseModel):
     """Request options for generating a structured investigation report."""
     title: Optional[str] = Field(default=None, description="Custom title for the investigation report.")
-    report_format: ReportFormat = Field(default=ReportFormat.HTML, description="Output format: 'json', 'html', or 'markdown'.")
+    report_format: ReportFormat = Field(default=ReportFormat.HTML, description="Output format: 'json', 'html', 'markdown', or 'pdf'.")
+    evidence_ids: Optional[List[int]] = Field(default=None, description="Optional specific evidence IDs to include. If omitted, all evidence is included.")
+    finding_ids: Optional[List[str]] = Field(default=None, description="Optional specific finding IDs to include. If omitted, all findings are included.")
 
 
 class StructuredReportData(BaseModel):
@@ -71,6 +73,7 @@ class ReportResponse(BaseModel):
     case_id: int
     title: str
     report_format: ReportFormat
+    status: str = Field(default="completed", description="Report status: draft, generating, completed, or failed.")
     disclaimer: str = _MANDATORY_DISCLAIMER
     generated_by: Optional[int] = None
     author_name: Optional[str] = None
@@ -86,8 +89,8 @@ class ReportDetailResponse(ReportResponse):
 
 
 class ReportListResponse(BaseModel):
-    """Paginated list of investigation reports for a case."""
-    case_id: int
+    """Paginated list of investigation reports."""
+    case_id: Optional[int] = None
     total: int
     page: int
     page_size: int

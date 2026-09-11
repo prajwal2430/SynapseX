@@ -89,6 +89,21 @@
   color: var(--gray-100);
 }
 
+.inv-btn--danger {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+}
+.inv-btn--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fff;
+}
+.inv-btn--danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Stats Strip ── */
 .inv-stats-strip {
   display: flex;

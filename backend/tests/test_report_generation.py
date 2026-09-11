@@ -185,3 +185,51 @@ def test_report_html_renderer(rich_investigation_state):
     assert "7. AI-Assisted Findings" in html
     assert "11. Investigator Review Status" in html
     assert "12. Limitations &amp; Uncertainty" in html or "12. Limitations" in html
+
+
+def test_report_generate_request_schema_and_status():
+    """Verify ReportGenerateRequest supports evidence/findings filters and ReportResponse includes status."""
+    from app.schemas.report import ReportGenerateRequest, ReportResponse
+    import datetime
+
+    req = ReportGenerateRequest(
+        title="Custom Report Title",
+        report_format=ReportFormat.HTML,
+        evidence_ids=[1, 2],
+        finding_ids=["FND-101-AA"],
+    )
+    assert req.title == "Custom Report Title"
+    assert req.evidence_ids == [1, 2]
+    assert req.finding_ids == ["FND-101-AA"]
+
+    resp = ReportResponse(
+        id=1,
+        report_id="RPT-1-ABC",
+        case_id=101,
+        title="Custom Report Title",
+        report_format=ReportFormat.HTML,
+        status="completed",
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    assert resp.status == "completed"
+    assert resp.report_id == "RPT-1-ABC"
+
+
+def test_pdf_report_rendering(rich_investigation_state):
+    """Verify that ReportService._render_pdf_report compiles a valid PDF binary with all sections."""
+    from app.services.report_service import ReportService
+    from app.agents.report_agent import report_agent
+
+    rep_res = report_agent(rich_investigation_state)
+    structured_data = rep_res.get("structured_report", {})
+
+    pdf_bytes = ReportService._render_pdf_report(
+        data=structured_data,
+        title="Automated Forensic Report",
+        report_id="RPT-TEST-001",
+        case_id=1,
+    )
+
+    assert isinstance(pdf_bytes, bytes)
+    assert len(pdf_bytes) > 500
+    assert pdf_bytes.startswith(b"%PDF")

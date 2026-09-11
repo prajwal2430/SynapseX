@@ -88,20 +88,22 @@ export default function Login() {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.isNetworkError) {
-          setErrorMessage('Unable to connect to the ADEIP server. Please ensure the backend service is running on https://synapsex-qdhb.onrender.com.')
+          setErrorMessage('Unable to connect to the ADEIP server. Please ensure the backend is running on http://127.0.0.1:8000.')
         } else if (err.status === 401) {
           setErrorMessage('Incorrect email or password. Please verify your credentials.')
         } else if (err.status === 403) {
           setErrorMessage('Access denied. This account does not have permission to access the platform.')
         } else if (err.status === 404) {
           setErrorMessage('Authentication endpoint not found. Please verify the backend API configuration.')
+        } else if (err.status === 422) {
+          setErrorMessage(typeof err.message === 'string' ? err.message : 'Invalid email format or field values.')
         } else if (err.status >= 500) {
           setErrorMessage('An internal server error occurred. Please verify backend logs.')
         } else {
-          setErrorMessage(err.message || 'Authentication failed.')
+          setErrorMessage(typeof err.message === 'string' ? err.message : 'Authentication failed.')
         }
       } else {
-        setErrorMessage('Unable to connect to the ADEIP server. Please ensure the backend service is running.')
+        setErrorMessage(typeof err?.message === 'string' ? err.message : 'Unable to connect to the ADEIP server.')
       }
     } finally {
       setLoading(false)

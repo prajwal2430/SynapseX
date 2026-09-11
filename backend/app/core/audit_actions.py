@@ -32,6 +32,7 @@ class AuditAction(str, enum.Enum):
 
     # Reports
     REPORT_GENERATED = "report_generated"
+    REPORT_DELETED = "report_deleted"
 
     # Administration
     USER_CREATED = "user_created"

@@ -31,6 +31,7 @@ class ReportFormat(str, enum.Enum):
     JSON = "json"
     HTML = "html"
     MARKDOWN = "markdown"
+    PDF = "pdf"
 
 
 class InvestigationReportModel(Base):

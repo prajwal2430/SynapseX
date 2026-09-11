@@ -5,7 +5,7 @@
  * (distinguishing 401/403/404/500 vs. Network/ECONNREFUSED errors), and typed API methods.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://synapsex-qdhb.onrender.com/api'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api'
 const TOKEN_KEY = 'adeip_auth_token'
 const USER_KEY = 'adeip_auth_user'
 
@@ -40,6 +40,29 @@ export const authStorage = {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
   },
+}
+
+function extractErrorMessage(data, status) {
+  if (!data) return `HTTP error ${status}`
+  if (typeof data === 'string') return data
+  if (typeof data.detail === 'string') return data.detail
+  if (Array.isArray(data.detail)) {
+    return data.detail
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && item.msg) {
+          const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : ''
+          return field ? `${field}: ${item.msg}` : item.msg
+        }
+        return JSON.stringify(item)
+      })
+      .join('; ')
+  }
+  if (data.detail && typeof data.detail === 'object') {
+    return data.detail.msg || data.detail.message || JSON.stringify(data.detail)
+  }
+  if (typeof data.message === 'string') return data.message
+  return `HTTP error ${status}`
 }
 
 /**
@@ -84,15 +107,15 @@ async function request(endpoint, options = {}) {
     if (!res.ok) {
       let errorMsg = ''
       if (res.status === 401) {
-        errorMsg = (data && data.detail) || 'Invalid credentials or session expired'
+        errorMsg = (data && typeof data.detail === 'string' && data.detail) || 'Incorrect email or password. Please verify your credentials.'
       } else if (res.status === 403) {
-        errorMsg = (data && data.detail) || 'You do not have permission to access this resource'
+        errorMsg = (data && typeof data.detail === 'string' && data.detail) || 'You do not have permission to access this resource.'
       } else if (res.status === 404) {
-        errorMsg = (data && data.detail) || 'Requested resource not found'
+        errorMsg = (data && typeof data.detail === 'string' && data.detail) || 'Requested resource not found.'
       } else if (res.status >= 500) {
         errorMsg = 'An internal server error occurred. Please try again later.'
       } else {
-        errorMsg = (data && data.detail) || (data && data.message) || `HTTP error ${res.status}`
+        errorMsg = extractErrorMessage(data, res.status)
       }
       throw new ApiError(errorMsg, res.status, data, false)
     }
@@ -104,7 +127,7 @@ async function request(endpoint, options = {}) {
     }
     // Network errors (Failed to fetch, proxy connection refused, CORS, offline)
     throw new ApiError(
-      'Unable to connect to the ADEIP server. Please ensure the backend service is running on https://synapsex-qdhb.onrender.com.',
+      'Unable to connect to the ADEIP server. Please ensure the backend service is running.',
       0,
       null,
       true
@@ -282,11 +305,35 @@ export const api = {
   // ── Reports ──
   reports: {
     listForCase: (caseId) => request(`/cases/${caseId}/reports`),
-    create: (caseId, reportData) => request(`/cases/${caseId}/reports`, {
+    listAll: (params = {}) => {
+      const q = new URLSearchParams()
+      if (params.caseId) q.set('case_id', params.caseId)
+      if (params.page) q.set('page', params.page)
+      if (params.pageSize) q.set('page_size', params.pageSize)
+      const qs = q.toString()
+      return request(`/reports${qs ? `?${qs}` : ''}`)
+    },
+    create: (caseId, reportData) => request(`/cases/${caseId}/reports/generate`, {
       method: 'POST',
       body: JSON.stringify(reportData),
     }),
     get: (reportId) => request(`/reports/${reportId}`),
+    getHtml: (reportId) => request(`/reports/${reportId}/html`),
+    getPdfUrl: (reportId) => `${API_BASE}/reports/${reportId}/pdf`,
+    download: async (reportId, format = 'pdf') => {
+      const token = authStorage.getToken()
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const res = await fetch(`${API_BASE}/reports/${reportId}/download?export_format=${format}`, {
+        headers,
+      })
+      if (!res.ok) {
+        throw new Error(`Failed to download report: ${res.statusText}`)
+      }
+      return await res.blob()
+    },
+    delete: (reportId) => request(`/reports/${reportId}`, {
+      method: 'DELETE',
+    }),
   },
 
   // ── Real-Time Simulation / Demo Stream ──
