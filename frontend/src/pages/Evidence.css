@@ -514,7 +514,7 @@
 .ev-row {
   cursor: pointer;
   transition: background var(--transition-fast);
-  animation: fadeInUp var(--transition-slow) ease both;
+  animation: fadeInUp 400ms ease both;
 }
 .ev-row:hover { background: rgba(46,127,255,0.04); }
 .ev-row--selected { background: rgba(46,127,255,0.07) !important; }
@@ -1085,4 +1085,31 @@
   .ev-toolbar { flex-direction: column; align-items: stretch; }
   .ev-search-wrap { max-width: 100%; }
   .ev-filter-tabs { justify-content: flex-start; flex-wrap: wrap; }
+}
+
+.ev-flag-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--gray-400);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ev-flag-toggle-btn:hover {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #f59e0b;
+}
+
+.ev-flag-toggle-btn--active {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #f59e0b;
 }

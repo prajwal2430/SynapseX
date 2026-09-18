@@ -1,0 +1,10 @@
+export declare enum CustodyAction {
+    CREATED = "CREATED",
+    UPLOADED = "UPLOADED",
+    VIEWED = "VIEWED",
+    DOWNLOADED = "DOWNLOADED",
+    PROCESSED = "PROCESSED",
+    EXPORTED = "EXPORTED",
+    DELETED = "DELETED",
+    HASH_VERIFIED = "HASH_VERIFIED"
+}

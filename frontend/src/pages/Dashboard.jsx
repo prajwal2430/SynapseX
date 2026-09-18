@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   HardDrive, Brain, ShieldAlert, Bot,
@@ -6,7 +6,8 @@ import {
   Usb, Monitor, Lock, Video, FileSearch,
   Network, CheckCircle2, CircleDot, Zap,
   TrendingUp, Eye, Search, Activity,
-  FlaskConical, Link2, ListChecks
+  FlaskConical, Link2, ListChecks,
+  BarChart3, Layers, CheckCheck, Sparkles
 } from 'lucide-react'
 import './Dashboard.css'
 
@@ -157,10 +158,16 @@ function LiveClock() {
 /* ─────────────────────────────────────────
    SUMMARY CARD
 ───────────────────────────────────────── */
-function SummaryCard({ card }) {
+function SummaryCard({ card, onClick }) {
   const Icon = card.icon
   return (
-    <div className={`dash-summary-card dash-summary-card--${card.color}`} id={`card-${card.id}`}>
+    <div 
+      className={`dash-summary-card dash-summary-card--${card.color}`} 
+      id={`card-${card.id}`}
+      onClick={onClick}
+      style={{ cursor: 'pointer' }}
+      title={`Open ${card.label} module`}
+    >
       <div className="dsc-top">
         <div className="dsc-label-row">
           <span className="dsc-label">{card.label}</span>
@@ -238,11 +245,490 @@ function TimelineEvent({ event, index }) {
 }
 
 /* ─────────────────────────────────────────
+   MONTHLY CASE SOLVE & REGISTER DATASET
+───────────────────────────────────────── */
+const MONTHLY_CASE_STATS = [
+  { month: 'Oct', year: '2025', registered: 26, solved: 23, critical: 5, avgDays: 5.1 },
+  { month: 'Nov', year: '2025', registered: 32, solved: 30, critical: 7, avgDays: 4.8 },
+  { month: 'Dec', year: '2025', registered: 21, solved: 24, critical: 4, avgDays: 4.5 },
+  { month: 'Jan', year: '2026', registered: 39, solved: 36, critical: 9, avgDays: 4.1 },
+  { month: 'Feb', year: '2026', registered: 35, solved: 33, critical: 8, avgDays: 3.9 },
+  { month: 'Mar', year: '2026', registered: 44, solved: 41, critical: 12, avgDays: 3.8 },
+  { month: 'Apr', year: '2026', registered: 38, solved: 37, critical: 7, avgDays: 3.6 },
+  { month: 'May', year: '2026', registered: 47, solved: 45, critical: 11, avgDays: 3.4 },
+  { month: 'Jun', year: '2026', registered: 51, solved: 48, critical: 14, avgDays: 3.3 },
+  { month: 'Jul', year: '2026', registered: 45, solved: 44, critical: 10, avgDays: 3.2 },
+  { month: 'Aug', year: '2026', registered: 56, solved: 52, critical: 16, avgDays: 3.1 },
+  { month: 'Sep', year: '2026', registered: 38, solved: 36, critical: 8, avgDays: 2.9 },
+]
+
+function generateSmoothPath(points) {
+  if (!points || points.length === 0) return ''
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`
+  let d = `M ${points[0].x} ${points[0].y}`
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i === 0 ? 0 : i - 1]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const p3 = points[i + 2 < points.length ? i + 2 : i + 1]
+    const cp1x = p1.x + (p2.x - p0.x) / 6
+    const cp1y = p1.y + (p2.y - p0.y) / 6
+    const cp2x = p2.x - (p3.x - p1.x) / 6
+    const cp2y = p2.y - (p3.y - p1.y) / 6
+    d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`
+  }
+  return d
+}
+
+function MonthlyCaseSolveRegisterGraph() {
+  const [timeRange, setTimeRange] = useState('12m') // '6m' | '12m'
+  const [chartType, setChartType] = useState('spline') // 'spline' | 'bars'
+  const [hoverIndex, setHoverIndex] = useState(null)
+  const [visibleSeries, setVisibleSeries] = useState({ registered: true, solved: true })
+
+  const dataset = useMemo(() => {
+    return timeRange === '6m' ? MONTHLY_CASE_STATS.slice(6) : MONTHLY_CASE_STATS
+  }, [timeRange])
+
+  const totals = useMemo(() => {
+    const reg = dataset.reduce((acc, d) => acc + d.registered, 0)
+    const sol = dataset.reduce((acc, d) => acc + d.solved, 0)
+    const crit = dataset.reduce((acc, d) => acc + d.critical, 0)
+    const clearance = reg > 0 ? ((sol / reg) * 100).toFixed(1) : '0'
+    const avgVelocity = (dataset.reduce((acc, d) => acc + d.avgDays, 0) / dataset.length).toFixed(1)
+    return { reg, sol, crit, clearance, avgVelocity }
+  }, [dataset])
+
+  // SVG Coordinates
+  const svgWidth = 680
+  const svgHeight = 250
+  const padLeft = 40
+  const padRight = 24
+  const padTop = 24
+  const padBottom = 32
+  const plotW = svgWidth - padLeft - padRight
+  const plotH = svgHeight - padTop - padBottom
+  const maxY = 65
+  const yTicks = [0, 15, 30, 45, 60]
+
+  const pointsRegistered = useMemo(() => {
+    return dataset.map((d, i) => ({
+      x: padLeft + (i / (dataset.length - 1)) * plotW,
+      y: padTop + plotH - (d.registered / maxY) * plotH,
+      val: d.registered,
+      data: d,
+    }))
+  }, [dataset, plotW, plotH, padLeft, padTop])
+
+  const pointsSolved = useMemo(() => {
+    return dataset.map((d, i) => ({
+      x: padLeft + (i / (dataset.length - 1)) * plotW,
+      y: padTop + plotH - (d.solved / maxY) * plotH,
+      val: d.solved,
+      data: d,
+    }))
+  }, [dataset, plotW, plotH, padLeft, padTop])
+
+  const pathRegistered = useMemo(() => generateSmoothPath(pointsRegistered), [pointsRegistered])
+  const pathSolved = useMemo(() => generateSmoothPath(pointsSolved), [pointsSolved])
+
+  const areaRegistered = useMemo(() => {
+    if (pointsRegistered.length === 0) return ''
+    const base = padTop + plotH
+    return `${pathRegistered} L ${pointsRegistered[pointsRegistered.length - 1].x} ${base} L ${pointsRegistered[0].x} ${base} Z`
+  }, [pathRegistered, pointsRegistered, padTop, plotH])
+
+  const areaSolved = useMemo(() => {
+    if (pointsSolved.length === 0) return ''
+    const base = padTop + plotH
+    return `${pathSolved} L ${pointsSolved[pointsSolved.length - 1].x} ${base} L ${pointsSolved[0].x} ${base} Z`
+  }, [pathSolved, pointsSolved, padTop, plotH])
+
+  const activeHoverItem = hoverIndex !== null ? dataset[hoverIndex] : null
+  const activeHoverPos = hoverIndex !== null && pointsRegistered[hoverIndex] ? pointsRegistered[hoverIndex] : null
+
+  return (
+    <div className="mc-graph-wrapper">
+      {/* Top KPI Metrics Bar */}
+      <div className="mc-kpi-row">
+        <div className="mc-kpi-card mc-kpi-card--registered">
+          <span className="mc-kpi-label">
+            Cases Registered
+            <TrendingUp size={11} className="mc-kpi-sub--blue" />
+          </span>
+          <span className="mc-kpi-val">{totals.reg}</span>
+          <span className="mc-kpi-sub mc-kpi-sub--blue">+14% intake volume</span>
+        </div>
+
+        <div className="mc-kpi-card mc-kpi-card--solved">
+          <span className="mc-kpi-label">
+            Cases Solved
+            <CheckCheck size={12} className="mc-kpi-sub--up" />
+          </span>
+          <span className="mc-kpi-val">{totals.sol}</span>
+          <span className="mc-kpi-sub mc-kpi-sub--up">+18% resolution rate</span>
+        </div>
+
+        <div className="mc-kpi-card mc-kpi-card--clearance">
+          <span className="mc-kpi-label">Clearance Rate</span>
+          <span className="mc-kpi-val">{totals.clearance}%</span>
+          <span className="mc-kpi-sub">Target: &gt;85%</span>
+        </div>
+
+        <div className="mc-kpi-card mc-kpi-card--velocity">
+          <span className="mc-kpi-label">Avg Resolution</span>
+          <span className="mc-kpi-val">{totals.avgVelocity} <span style={{ fontSize: 11, fontWeight: 500 }}>Days</span></span>
+          <span className="mc-kpi-sub mc-kpi-sub--up">↓ 1.4d vs 2025</span>
+        </div>
+      </div>
+
+      {/* Chart Controls & Legend */}
+      <div className="mc-toolbar">
+        <div className="mc-legend-group">
+          <div
+            className={`mc-legend-pill ${!visibleSeries.registered ? 'mc-legend-pill--dimmed' : ''}`}
+            onClick={() => setVisibleSeries(s => ({ ...s, registered: !s.registered }))}
+            title="Click to toggle Cases Registered"
+          >
+            <span className="mc-legend-indicator mc-legend-indicator--registered" />
+            <span>Cases Registered ({totals.reg})</span>
+          </div>
+
+          <div
+            className={`mc-legend-pill ${!visibleSeries.solved ? 'mc-legend-pill--dimmed' : ''}`}
+            onClick={() => setVisibleSeries(s => ({ ...s, solved: !s.solved }))}
+            title="Click to toggle Cases Solved"
+          >
+            <span className="mc-legend-indicator mc-legend-indicator--solved" />
+            <span>Cases Solved ({totals.sol})</span>
+          </div>
+        </div>
+
+        <div className="mc-controls-group">
+          {/* Chart Type Toggle */}
+          <div className="mc-btn-group">
+            <button
+              className={`mc-control-btn ${chartType === 'spline' ? 'mc-control-btn--active' : ''}`}
+              onClick={() => setChartType('spline')}
+            >
+              Curves
+            </button>
+            <button
+              className={`mc-control-btn ${chartType === 'bars' ? 'mc-control-btn--active' : ''}`}
+              onClick={() => setChartType('bars')}
+            >
+              Bars
+            </button>
+          </div>
+
+          {/* Time Range Toggle */}
+          <div className="mc-btn-group">
+            <button
+              className={`mc-control-btn ${timeRange === '6m' ? 'mc-control-btn--active' : ''}`}
+              onClick={() => setTimeRange('6m')}
+            >
+              6M
+            </button>
+            <button
+              className={`mc-control-btn ${timeRange === '12m' ? 'mc-control-btn--active' : ''}`}
+              onClick={() => setTimeRange('12m')}
+            >
+              12M
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main SVG Graph */}
+      <div className="mc-chart-box" onMouseLeave={() => setHoverIndex(null)}>
+        <svg
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          className="mc-svg-canvas"
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <linearGradient id="regAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#2e7fff" stopOpacity="0.28" />
+              <stop offset="90%" stopColor="#2e7fff" stopOpacity="0.01" />
+            </linearGradient>
+
+            <linearGradient id="solAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#00e676" stopOpacity="0.26" />
+              <stop offset="90%" stopColor="#00e676" stopOpacity="0.01" />
+            </linearGradient>
+
+            <linearGradient id="regBarGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#5b9fff" />
+              <stop offset="100%" stopColor="#1a5fd4" />
+            </linearGradient>
+            <linearGradient id="solBarGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1aff8c" />
+              <stop offset="100%" stopColor="#00c862" />
+            </linearGradient>
+          </defs>
+
+          {/* Horizontal Grid lines & Y Axis labels */}
+          {yTicks.map(val => {
+            const y = padTop + plotH - (val / maxY) * plotH
+            return (
+              <g key={val}>
+                <line
+                  x1={padLeft}
+                  y1={y}
+                  x2={svgWidth - padRight}
+                  y2={y}
+                  stroke="rgba(46, 127, 255, 0.09)"
+                  strokeDasharray={val === 0 ? 'none' : '3 3'}
+                />
+                <text
+                  x={padLeft - 8}
+                  y={y + 3}
+                  textAnchor="end"
+                  fill="rgba(107, 130, 168, 0.7)"
+                  fontSize="9.5"
+                  fontFamily="JetBrains Mono, monospace"
+                >
+                  {val}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* Month X Labels */}
+          {dataset.map((d, i) => {
+            const x = padLeft + (i / (dataset.length - 1)) * plotW
+            const isHovered = hoverIndex === i
+            return (
+              <text
+                key={i}
+                x={x}
+                y={svgHeight - 10}
+                textAnchor="middle"
+                fill={isHovered ? '#ffffff' : 'rgba(107, 130, 168, 0.85)'}
+                fontWeight={isHovered ? '700' : '500'}
+                fontSize="10"
+                fontFamily="JetBrains Mono, monospace"
+              >
+                {d.month}
+              </text>
+            )
+          })}
+
+          {/* Spline Mode Rendering */}
+          {chartType === 'spline' && (
+            <>
+              {visibleSeries.registered && (
+                <>
+                  <path d={areaRegistered} fill="url(#regAreaGrad)" />
+                  <path
+                    d={pathRegistered}
+                    fill="none"
+                    stroke="#2e7fff"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </>
+              )}
+
+              {visibleSeries.solved && (
+                <>
+                  <path d={areaSolved} fill="url(#solAreaGrad)" />
+                  <path
+                    d={pathSolved}
+                    fill="none"
+                    stroke="#00e676"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </>
+              )}
+
+              {/* Data Node Markers */}
+              {dataset.map((_, i) => {
+                const ptReg = pointsRegistered[i]
+                const ptSol = pointsSolved[i]
+                const isHovered = hoverIndex === i
+
+                return (
+                  <g key={i}>
+                    {visibleSeries.registered && (
+                      <circle
+                        cx={ptReg.x}
+                        cy={ptReg.y}
+                        r={isHovered ? 5.5 : 3.5}
+                        fill="#0b1120"
+                        stroke="#2e7fff"
+                        strokeWidth={isHovered ? 3 : 2}
+                        style={{ transition: 'all 150ms ease' }}
+                      />
+                    )}
+                    {visibleSeries.solved && (
+                      <circle
+                        cx={ptSol.x}
+                        cy={ptSol.y}
+                        r={isHovered ? 5.5 : 3.5}
+                        fill="#0b1120"
+                        stroke="#00e676"
+                        strokeWidth={isHovered ? 3 : 2}
+                        style={{ transition: 'all 150ms ease' }}
+                      />
+                    )}
+                  </g>
+                )
+              })}
+            </>
+          )}
+
+          {/* Grouped Bars Mode */}
+          {chartType === 'bars' && (
+            <g>
+              {dataset.map((d, i) => {
+                const colW = plotW / dataset.length
+                const xCenter = padLeft + i * colW + colW / 2
+                const barW = Math.min(14, colW * 0.35)
+                const isHovered = hoverIndex === i
+
+                const regHeight = (d.registered / maxY) * plotH
+                const regY = padTop + plotH - regHeight
+                const solHeight = (d.solved / maxY) * plotH
+                const solY = padTop + plotH - solHeight
+
+                return (
+                  <g key={i} opacity={hoverIndex === null || isHovered ? 1 : 0.45}>
+                    {visibleSeries.registered && (
+                      <rect
+                        x={xCenter - barW - 1.5}
+                        y={regY}
+                        width={barW}
+                        height={regHeight}
+                        rx="3"
+                        fill="url(#regBarGrad)"
+                      />
+                    )}
+                    {visibleSeries.solved && (
+                      <rect
+                        x={xCenter + 1.5}
+                        y={solY}
+                        width={barW}
+                        height={solHeight}
+                        rx="3"
+                        fill="url(#solBarGrad)"
+                      />
+                    )}
+                  </g>
+                )
+              })}
+            </g>
+          )}
+
+          {/* Vertical Crosshair Guideline */}
+          {hoverIndex !== null && pointsRegistered[hoverIndex] && (
+            <line
+              x1={pointsRegistered[hoverIndex].x}
+              y1={padTop}
+              x2={pointsRegistered[hoverIndex].x}
+              y2={padTop + plotH}
+              stroke="rgba(255, 255, 255, 0.25)"
+              strokeDasharray="3 3"
+              strokeWidth="1.2"
+            />
+          )}
+
+          {/* Interactive Hitbox Strips */}
+          {dataset.map((_, i) => {
+            const colW = plotW / dataset.length
+            const x = padLeft + i * colW
+            return (
+              <rect
+                key={i}
+                x={x}
+                y={padTop}
+                width={colW}
+                height={plotH}
+                fill="transparent"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={() => setHoverIndex(i)}
+              />
+            )
+          })}
+        </svg>
+
+        {/* Floating Tooltip Box */}
+        {activeHoverItem && activeHoverPos && (
+          <div
+            className="mc-tooltip-popup"
+            style={{
+              left: `${(activeHoverPos.x / svgWidth) * 100}%`,
+              top: `${Math.max(28, (activeHoverPos.y / svgHeight) * 100 - 15)}%`,
+            }}
+          >
+            <div className="mc-tt-month">
+              <span>{activeHoverItem.month} {activeHoverItem.year}</span>
+              <span style={{ color: 'var(--alert-medium)', fontSize: 10 }}>
+                {activeHoverItem.critical} critical
+              </span>
+            </div>
+
+            <div className="mc-tt-row">
+              <span className="mc-tt-label">
+                <span className="mc-tt-dot mc-tt-dot--reg" />
+                Registered:
+              </span>
+              <span className="mc-tt-val">{activeHoverItem.registered} cases</span>
+            </div>
+
+            <div className="mc-tt-row">
+              <span className="mc-tt-label">
+                <span className="mc-tt-dot mc-tt-dot--sol" />
+                Solved:
+              </span>
+              <span className="mc-tt-val" style={{ color: 'var(--green-400)' }}>
+                {activeHoverItem.solved} cases
+              </span>
+            </div>
+
+            <div className="mc-tt-row">
+              <span className="mc-tt-label">Net Delta:</span>
+              <span
+                className="mc-tt-val"
+                style={{
+                  color: activeHoverItem.solved >= activeHoverItem.registered ? 'var(--green-400)' : 'var(--alert-high)',
+                }}
+              >
+                {activeHoverItem.solved >= activeHoverItem.registered ? '+' : ''}
+                {activeHoverItem.solved - activeHoverItem.registered} net
+              </span>
+            </div>
+
+            <div className="mc-tt-rate">
+              <span>Clearance Rate:</span>
+              <strong>{((activeHoverItem.solved / activeHoverItem.registered) * 100).toFixed(0)}%</strong>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer Info */}
+      <div className="mc-footer-info">
+        <div className="mc-footer-stat">
+          <Sparkles size={12} color="var(--cyan-400)" />
+          <span>Case Inflow vs Resolution: <strong>+{totals.clearance}% clearance efficiency</strong></span>
+        </div>
+        <span>Forensic AI Multi-Agent correlation enabled</span>
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────
    MAIN DASHBOARD
 ───────────────────────────────────────── */
 export default function Dashboard() {
   const navigate = useNavigate()
   const [pulse, setPulse] = useState(0)
+  const [activePanelTab, setActivePanelTab] = useState('graph') // 'graph' | 'timeline' | 'both'
 
   // Simulate live pulse counter
   useEffect(() => {
@@ -325,9 +811,21 @@ export default function Dashboard() {
           SUMMARY CARDS
       ═══════════════════════════════ */}
       <div className="dash-cards-grid">
-        {SUMMARY_CARDS.map(card => (
-          <SummaryCard key={card.id} card={card} />
-        ))}
+        {SUMMARY_CARDS.map(card => {
+          const cardRoutes = {
+            'active-evidence': '/evidence',
+            'ai-findings': '/ai-findings',
+            'risk-level': '/investigations',
+            'agent-status': '/ai-agents',
+          }
+          return (
+            <SummaryCard 
+              key={card.id} 
+              card={card} 
+              onClick={() => navigate(cardRoutes[card.id] || '/investigations')} 
+            />
+          )
+        })}
       </div>
 
       {/* ═══════════════════════════════
@@ -335,40 +833,84 @@ export default function Dashboard() {
       ═══════════════════════════════ */}
       <div className="dash-main-grid">
 
-        {/* ─── LEFT: TIMELINE ─── */}
+        {/* ─── LEFT: TIMELINE & MONTHLY RESOLUTION GRAPH ─── */}
         <div className="dash-panel dash-panel--timeline">
           <div className="panel-header">
-            <div className="panel-title">
-              <Activity size={15} />
-              Live Investigation Timeline
+            {/* View Switcher Tabs */}
+            <div className="panel-tabs-wrap">
+              <button
+                className={`panel-tab-btn ${activePanelTab === 'graph' ? 'panel-tab-btn--active' : ''}`}
+                onClick={() => setActivePanelTab('graph')}
+                title="View Monthly Cases Registered vs Solved Trend Graph"
+              >
+                <BarChart3 size={13} />
+                <span>Monthly Solve & Register</span>
+                <span className="panel-tab-badge">12M</span>
+              </button>
+
+              <button
+                className={`panel-tab-btn ${activePanelTab === 'timeline' ? 'panel-tab-btn--active' : ''}`}
+                onClick={() => setActivePanelTab('timeline')}
+                title="View Active Case Live Investigation Timeline"
+              >
+                <Activity size={13} />
+                <span>Investigation Timeline</span>
+                <span className="panel-tab-badge">{TIMELINE_EVENTS.length}</span>
+              </button>
+
+              <button
+                className={`panel-tab-btn ${activePanelTab === 'both' ? 'panel-tab-btn--active' : ''}`}
+                onClick={() => setActivePanelTab('both')}
+                title="View Both Graph & Timeline Stacked"
+              >
+                <Layers size={13} />
+                <span>Split View</span>
+              </button>
             </div>
+
             <div className="panel-header-right">
               <span className="badge badge--active" style={{ fontSize: 9 }}>
                 <span className="pulse-dot" style={{ width: 5, height: 5 }} />
                 Live
               </span>
-              <span className="panel-event-count">{TIMELINE_EVENTS.length} events</span>
             </div>
           </div>
 
-          <div className="tl-legend">
-            <span className="tl-legend-item tl-legend-item--normal">● Normal</span>
-            <span className="tl-legend-item tl-legend-item--suspicious">● Flagged</span>
-            <span className="tl-legend-item tl-legend-item--critical">● Suspicious</span>
-          </div>
+          {/* Render Monthly Graph */}
+          {(activePanelTab === 'graph' || activePanelTab === 'both') && (
+            <MonthlyCaseSolveRegisterGraph />
+          )}
 
-          <div className="tl-scroll-area">
-            <div className="tl-track">
-              {TIMELINE_EVENTS.map((evt, i) => (
-                <TimelineEvent key={evt.id} event={evt} index={i} />
-              ))}
-            </div>
-          </div>
+          {/* Render Timeline */}
+          {(activePanelTab === 'timeline' || activePanelTab === 'both') && (
+            <>
+              {activePanelTab === 'both' && (
+                <div className="panel-divider-label">
+                  <Activity size={12} />
+                  <span>Active Investigation Sequence · CASE-2026-001 (Server Room B)</span>
+                </div>
+              )}
 
-          <div className="tl-footer">
-            <TrendingUp size={11} />
-            <span>Showing events 10:02 – 10:09 · Case window: 7 minutes</span>
-          </div>
+              <div className="tl-legend">
+                <span className="tl-legend-item tl-legend-item--normal">● Normal</span>
+                <span className="tl-legend-item tl-legend-item--suspicious">● Flagged</span>
+                <span className="tl-legend-item tl-legend-item--critical">● Suspicious</span>
+              </div>
+
+              <div className="tl-scroll-area">
+                <div className="tl-track">
+                  {TIMELINE_EVENTS.map((evt, i) => (
+                    <TimelineEvent key={evt.id} event={evt} index={i} />
+                  ))}
+                </div>
+              </div>
+
+              <div className="tl-footer">
+                <TrendingUp size={11} />
+                <span>Showing events 10:02 – 10:09 · Case window: 7 minutes</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* ─── RIGHT: AI PANEL ─── */}

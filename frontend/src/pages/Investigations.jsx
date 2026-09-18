@@ -70,20 +70,20 @@ function RiskBar({ score }) {
 }
 
 /* ── Stat strip ── */
-function StatsStrip() {
-  const active   = CASES.filter(c => c.status === 'active').length
-  const review   = CASES.filter(c => c.status === 'review').length
-  const closed   = CASES.filter(c => c.status === 'closed').length
-  const critical = CASES.filter(c => c.priority === 'critical').length
+function StatsStrip({ cases = [] }) {
+  const active   = cases.filter(c => c.status === 'active').length
+  const review   = cases.filter(c => c.status === 'review').length
+  const closed   = cases.filter(c => c.status === 'closed').length
+  const critical = cases.filter(c => c.priority === 'critical').length
   return (
     <div className="inv-stats-strip">
       {[
-        { label: 'Total Cases',   value: CASES.length,       color: 'blue'  },
+        { label: 'Total Cases',   value: cases.length,       color: 'blue'  },
         { label: 'Active',        value: active,             color: 'green' },
         { label: 'Under Review',  value: review,             color: 'amber' },
         { label: 'Closed',        value: closed,             color: 'gray'  },
         { label: 'Critical',      value: critical,           color: 'red'   },
-        { label: 'Total Evidence',value: CASES.reduce((a,c) => a + c.evidenceCount, 0).toLocaleString(), color: 'cyan' },
+        { label: 'Total Evidence',value: cases.reduce((a,c) => a + (c.evidenceCount || 0), 0).toLocaleString(), color: 'cyan' },
       ].map(s => (
         <div key={s.label} className={`inv-stat inv-stat--${s.color}`}>
           <span className="inv-stat-value">{s.value}</span>
@@ -100,6 +100,20 @@ function StatsStrip() {
 export default function Investigations() {
   const navigate = useNavigate()
 
+  const [casesList, setCasesList] = useState(CASES)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [toastMsg, setToastMsg] = useState(null)
+  const [newCaseData, setNewCaseData] = useState({
+    name: '',
+    type: 'Data Exfiltration',
+    priority: 'high',
+    tlp: 'TLP:AMBER',
+    classification: 'CONFIDENTIAL',
+    lead: 'Special Agent M. Reynolds',
+    description: '',
+    tags: 'Data, Insider, Network'
+  })
+
   const [search,     setSearch]     = useState('')
   const [statusFilter, setStatus]   = useState('all')
   const [priorityFilter, setPriority] = useState('all')
@@ -110,7 +124,7 @@ export default function Investigations() {
 
   /* ── derived list ── */
   const filtered = useMemo(() => {
-    let list = [...CASES]
+    let list = [...casesList]
     if (search)         list = list.filter(c =>
       c.id.toLowerCase().includes(search.toLowerCase()) ||
       c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -132,11 +146,53 @@ export default function Investigations() {
       return 0
     })
     return list
-  }, [search, statusFilter, priorityFilter, sortField, sortDir])
+  }, [casesList, search, statusFilter, priorityFilter, sortField, sortDir])
 
   function toggleSort(field) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortField(field); setSortDir('asc') }
+  }
+
+  function handleCreateCase(e) {
+    e.preventDefault()
+    if (!newCaseData.name.trim()) return
+    const nextIdNum = casesList.length + 1
+    const id = `CASE-2026-${String(nextIdNum).padStart(3, '0')}`
+    const createdCase = {
+      id,
+      name: newCaseData.name.trim(),
+      type: newCaseData.type,
+      status: 'active',
+      priority: newCaseData.priority,
+      tlp: newCaseData.tlp,
+      classification: newCaseData.classification,
+      lead: newCaseData.lead,
+      openedDate: new Date().toISOString().slice(0, 10),
+      lastUpdated: 'Just now',
+      lastUpdatedFull: new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC',
+      evidenceCount: 0,
+      aiFindings: 0,
+      riskScore: newCaseData.priority === 'critical' ? 88 : newCaseData.priority === 'high' ? 68 : 45,
+      riskLabel: newCaseData.priority === 'critical' ? 'Critical' : newCaseData.priority === 'high' ? 'High' : 'Medium',
+      tags: newCaseData.tags.split(',').map(t => t.trim()).filter(Boolean),
+      team: [newCaseData.lead],
+      description: newCaseData.description.trim() || 'Active forensic investigation.',
+      timeline: []
+    }
+    setCasesList(prev => [createdCase, ...prev])
+    setIsCreateOpen(false)
+    setNewCaseData({
+      name: '',
+      type: 'Data Exfiltration',
+      priority: 'high',
+      tlp: 'TLP:AMBER',
+      classification: 'CONFIDENTIAL',
+      lead: 'Special Agent M. Reynolds',
+      description: '',
+      tags: 'Data, Insider, Network'
+    })
+    setToastMsg(`Investigation ${id} created successfully`)
+    setTimeout(() => setToastMsg(null), 3500)
   }
 
   function SortIcon({ field }) {
@@ -149,6 +205,26 @@ export default function Investigations() {
   return (
     <div className="inv-root">
 
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          background: 'var(--surface)',
+          border: '1px solid var(--accent)',
+          borderRadius: '6px',
+          padding: '10px 16px',
+          color: 'var(--text)',
+          fontSize: '12px',
+          fontFamily: 'var(--font-mono)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          zIndex: 9999,
+        }}>
+          {toastMsg}
+        </div>
+      )}
+
       {/* ── Page header ── */}
       <div className="inv-page-header">
         <div className="inv-header-left">
@@ -158,7 +234,7 @@ export default function Investigations() {
           </div>
           <h1 className="inv-page-title">Investigations</h1>
           <p className="inv-page-sub">
-            {CASES.length} cases · {CASES.filter(c=>c.status==='active').length} active
+            {casesList.length} cases · {casesList.filter(c=>c.status==='active').length} active
           </p>
         </div>
         <div className="inv-header-right">
@@ -170,7 +246,12 @@ export default function Investigations() {
           >
             {viewMode === 'table' ? <LayoutGrid size={15} /> : <List size={15} />}
           </button>
-          <button className="inv-btn inv-btn--primary" id="create-case-btn">
+          <button 
+            className="inv-btn inv-btn--primary" 
+            id="create-case-btn"
+            onClick={() => setIsCreateOpen(true)}
+            title="Open new case creation form"
+          >
             <Plus size={15} />
             Create New Case
           </button>
@@ -178,7 +259,7 @@ export default function Investigations() {
       </div>
 
       {/* ── Stats strip ── */}
-      <StatsStrip />
+      <StatsStrip cases={casesList} />
 
       {/* ── Toolbar ── */}
       <div className="inv-toolbar">
@@ -457,6 +538,237 @@ export default function Investigations() {
               <div className="inv-card-arrow"><ChevronRight size={14} /></div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── New Case Creation Modal ── */}
+      {isCreateOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(5, 9, 17, 0.85)',
+          backdropFilter: 'blur(6px)',
+          zIndex: 10000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: '10px',
+            width: '100%',
+            maxWidth: '560px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FolderOpen size={16} style={{ color: 'var(--accent)' }} />
+                <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--text)', fontWeight: 600 }}>Create New Investigation</h3>
+              </div>
+              <button 
+                onClick={() => setIsCreateOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCase} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Investigation Title *
+                </label>
+                <input 
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. Operation Nightfall: Unauthorized USB Egress"
+                  value={newCaseData.name}
+                  onChange={e => setNewCaseData({ ...newCaseData, name: e.target.value })}
+                  style={{
+                    width: '100%',
+                    background: 'var(--surface-alt)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    color: 'var(--text)',
+                    fontSize: '13px'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Incident Type
+                  </label>
+                  <select
+                    value={newCaseData.type}
+                    onChange={e => setNewCaseData({ ...newCaseData, type: e.target.value })}
+                    style={{
+                      width: '100%',
+                      background: 'var(--surface-alt)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      color: 'var(--text)',
+                      fontSize: '13px'
+                    }}
+                  >
+                    <option value="Data Exfiltration">Data Exfiltration</option>
+                    <option value="Unauthorized Access">Unauthorized Access</option>
+                    <option value="Financial Fraud">Financial Fraud</option>
+                    <option value="Ransomware">Ransomware</option>
+                    <option value="Supply Chain Attack">Supply Chain Attack</option>
+                    <option value="Phishing">Phishing</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Priority Level
+                  </label>
+                  <select
+                    value={newCaseData.priority}
+                    onChange={e => setNewCaseData({ ...newCaseData, priority: e.target.value })}
+                    style={{
+                      width: '100%',
+                      background: 'var(--surface-alt)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      color: 'var(--text)',
+                      fontSize: '13px'
+                    }}
+                  >
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    TLP Protocol
+                  </label>
+                  <select
+                    value={newCaseData.tlp}
+                    onChange={e => setNewCaseData({ ...newCaseData, tlp: e.target.value })}
+                    style={{
+                      width: '100%',
+                      background: 'var(--surface-alt)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      color: 'var(--text)',
+                      fontSize: '13px'
+                    }}
+                  >
+                    <option value="TLP:RED">TLP:RED (Restricted)</option>
+                    <option value="TLP:AMBER">TLP:AMBER (Limited)</option>
+                    <option value="TLP:GREEN">TLP:GREEN (Community)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Lead Investigator
+                  </label>
+                  <input 
+                    type="text"
+                    value={newCaseData.lead}
+                    onChange={e => setNewCaseData({ ...newCaseData, lead: e.target.value })}
+                    style={{
+                      width: '100%',
+                      background: 'var(--surface-alt)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      color: 'var(--text)',
+                      fontSize: '13px'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Scope & Synopsis
+                </label>
+                <textarea 
+                  rows={3}
+                  placeholder="Describe initial indicators of compromise, physical location or affected assets..."
+                  value={newCaseData.description}
+                  onChange={e => setNewCaseData({ ...newCaseData, description: e.target.value })}
+                  style={{
+                    width: '100%',
+                    background: 'var(--surface-alt)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    color: 'var(--text)',
+                    fontSize: '13px',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                marginTop: '10px',
+                paddingTop: '14px',
+                borderTop: '1px solid var(--border)'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateOpen(false)}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    padding: '8px 14px',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    background: 'var(--accent)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '8px 18px',
+                    color: '#0b1120',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Plus size={14} /> Open Case
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

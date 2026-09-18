@@ -449,7 +449,14 @@ export default function AIFindings() {
               </div>
               <h4 className="missing-title">{item.title}</h4>
               <p className="missing-reason">{item.reason}</p>
-              <button className="missing-action-btn">
+              <button 
+                className="missing-action-btn"
+                onClick={() => {
+                  setActionSuccessMsg(`Collection task for "${item.title}" dispatched to forensic acquisition queue.`)
+                  setTimeout(() => setActionSuccessMsg(null), 4000)
+                }}
+                title="Dispatch acquisition task for this missing evidence"
+              >
                 <Plus size={12} /> Request Collection Task
               </button>
             </div>

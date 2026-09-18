@@ -6,7 +6,7 @@ import {
   Shield, AlertTriangle, CheckCircle2, Clock,
   ArrowRight, X, Sparkles, Layers, HardDrive,
   Eye, RefreshCw, SlidersHorizontal, Info,
-  Network, Lock, ChevronRight, Zap
+  Network, Lock, ChevronRight, Zap, Download
 } from 'lucide-react'
 import './KnowledgeGraph.css'
 
@@ -303,6 +303,22 @@ export default function KnowledgeGraph() {
     setSelectedNode(node)
   }
 
+  const handleExportGraph = () => {
+    const graphData = {
+      caseId: 'CASE-2026-001',
+      exportedAt: new Date().toISOString(),
+      nodes: nodes.map(n => ({ id: n.id, label: n.label, type: n.type, risk: n.risk, riskScore: n.riskScore, details: n.details })),
+      edges: edges.map(e => ({ id: e.id, from: e.from, to: e.to, label: e.label, type: e.type, risk: e.risk }))
+    }
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(graphData, null, 2))
+    const link = document.createElement('a')
+    link.setAttribute('href', dataStr)
+    link.setAttribute('download', `synapsex_knowledge_graph_CASE-2026-001_${Date.now()}.json`)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
   return (
     <div className={`kg-root ${selectedNode ? 'kg-root--panel-open' : ''}`}>
 
@@ -334,6 +350,28 @@ export default function KnowledgeGraph() {
             <span className="kg-metric-val">{nodes.filter(n => n.risk === 'critical').length}</span>
             <span className="kg-metric-lbl">High Risk Nodes</span>
           </div>
+          <button 
+            className="kg-btn-export"
+            onClick={handleExportGraph}
+            title="Download Graph JSON"
+            id="export-graph-btn"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(46, 127, 255, 0.1)',
+              border: '1px solid rgba(46, 127, 255, 0.3)',
+              color: 'var(--blue-300)',
+              borderRadius: '6px',
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            <Download size={13} />
+            <span>Export Graph (JSON)</span>
+          </button>
         </div>
       </header>
 

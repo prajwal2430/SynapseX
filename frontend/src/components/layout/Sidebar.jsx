@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   FolderSearch,
@@ -12,9 +12,11 @@ import {
   FileText,
   ShieldCheck,
   Settings,
+  Palette,
   ChevronLeft,
   X,
   Zap,
+  LogOut,
 } from 'lucide-react'
 import './Sidebar.css'
 
@@ -54,12 +56,14 @@ const NAV_ITEMS = [
     group: 'SYSTEM',
     items: [
       { label: 'Settings',          path: '/settings',           icon: Settings },
+      { label: 'Styleguide',        path: '/styleguide',         icon: Palette },
     ],
   },
 ]
 
 export default function Sidebar({ collapsed, mobileOpen, onClose }) {
   const location = useLocation()
+  const navigate = useNavigate()
 
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''} ${mobileOpen ? 'sidebar--mobile-open' : ''}`}>
@@ -140,20 +144,59 @@ export default function Sidebar({ collapsed, mobileOpen, onClose }) {
       {/* ── Footer ── */}
       <div className="sidebar-footer">
         {!collapsed ? (
-          <div className="sidebar-user">
-            <div className="user-avatar">
-              <span>SA</span>
+          <div className="sidebar-user-container">
+            <div 
+              className="sidebar-user"
+              onClick={() => navigate('/settings')}
+              title="Click to view Investigator Profile & Settings"
+            >
+              <div className="user-avatar">
+                <span>SA</span>
+              </div>
+              <div className="user-info">
+                <span className="user-name">Sr. Analyst</span>
+                <span className="user-clearance">TS/SCI Clearance</span>
+              </div>
             </div>
-            <div className="user-info">
-              <span className="user-name">Sr. Analyst</span>
-              <span className="user-clearance">TS/SCI Clearance</span>
+            <div className="sidebar-user-controls">
+              <button 
+                className="sidebar-ctrl-btn"
+                onClick={() => navigate('/settings')}
+                title="Profile & Investigator Settings"
+                id="sidebar-profile-setting-btn"
+                aria-label="Profile Settings"
+              >
+                <Settings size={14} />
+              </button>
+              <button 
+                className="sidebar-ctrl-btn sidebar-ctrl-btn--logout"
+                onClick={() => window.dispatchEvent(new CustomEvent('synapsex-lock-session'))}
+                title="Lock Terminal & Sign Out"
+                id="sidebar-logout-btn"
+                aria-label="Logout"
+              >
+                <LogOut size={14} />
+              </button>
             </div>
           </div>
         ) : (
           <div className="sidebar-user-collapsed">
-            <div className="user-avatar user-avatar--sm">
-              <span>SA</span>
-            </div>
+            <button 
+              className="sidebar-user-collapsed-btn"
+              onClick={() => navigate('/settings')}
+              title="Profile Settings"
+            >
+              <div className="user-avatar user-avatar--sm">
+                <span>SA</span>
+              </div>
+            </button>
+            <button 
+              className="sidebar-user-collapsed-logout"
+              onClick={() => window.dispatchEvent(new CustomEvent('synapsex-lock-session'))}
+              title="Lock Terminal / Sign Out"
+            >
+              <LogOut size={13} />
+            </button>
           </div>
         )}
       </div>

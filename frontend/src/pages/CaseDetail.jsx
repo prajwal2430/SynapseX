@@ -34,6 +34,7 @@ function TimelineDot({ type }) {
 export default function CaseDetail() {
   const { caseId } = useParams()
   const navigate = useNavigate()
+  const [toastMsg, setToastMsg] = useState(null)
   const c = getCaseById(caseId)
 
   if (!c) {
@@ -49,11 +50,53 @@ export default function CaseDetail() {
     )
   }
 
+  const handleShareCase = () => {
+    navigator.clipboard.writeText(window.location.href)
+    setToastMsg(`Case link for ${c.id} copied to clipboard`)
+    setTimeout(() => setToastMsg(null), 3000)
+  }
+
+  const handleExportCase = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(c, null, 2))
+    const downloadAnchor = document.createElement('a')
+    downloadAnchor.setAttribute("href", dataStr)
+    downloadAnchor.setAttribute("download", `synapsex_case_${c.id}_dossier.json`)
+    document.body.appendChild(downloadAnchor)
+    downloadAnchor.click()
+    downloadAnchor.remove()
+    setToastMsg(`Case dossier for ${c.id} exported successfully`)
+    setTimeout(() => setToastMsg(null), 3000)
+  }
+
   const tlpColor = c.tlp?.includes('RED') ? 'red' : c.tlp?.includes('AMBER') ? 'amber' : 'green'
   const riskColor = c.riskScore >= 80 ? 'critical' : c.riskScore >= 60 ? 'high' : c.riskScore >= 40 ? 'medium' : 'low'
 
   return (
     <div className="cd-root">
+
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          background: 'var(--surface)',
+          border: '1px solid var(--accent)',
+          borderRadius: '6px',
+          padding: '10px 16px',
+          color: 'var(--text)',
+          fontSize: '12px',
+          fontFamily: 'var(--font-mono)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <CheckCircle2 size={14} style={{ color: 'var(--accent)' }} />
+          <span>{toastMsg}</span>
+        </div>
+      )}
 
       {/* ── Breadcrumb ── */}
       <div className="cd-breadcrumb">
@@ -108,8 +151,22 @@ export default function CaseDetail() {
             <span className="cd-priority-dot" />
             {c.priority.charAt(0).toUpperCase() + c.priority.slice(1)} Priority
           </div>
-          <button className="cd-btn cd-btn--ghost" id="share-case-btn"><Share2 size={13} /> Share</button>
-          <button className="cd-btn cd-btn--ghost" id="export-case-btn"><Download size={13} /> Export</button>
+          <button 
+            className="cd-btn cd-btn--ghost" 
+            id="share-case-btn"
+            onClick={handleShareCase}
+            title="Copy case URL to clipboard"
+          >
+            <Share2 size={13} /> Share
+          </button>
+          <button 
+            className="cd-btn cd-btn--ghost" 
+            id="export-case-btn"
+            onClick={handleExportCase}
+            title="Download full case dossier JSON"
+          >
+            <Download size={13} /> Export
+          </button>
           <button className="cd-btn cd-btn--primary" id="open-workspace-btn"
             onClick={() => navigate(`/investigations/${c.id}/workspace`)}>
             <Eye size={13} /> Open Workspace
@@ -240,10 +297,20 @@ export default function CaseDetail() {
                 ))}
               </div>
               <div className="cd-ai-actions">
-                <button className="cd-btn cd-btn--primary" id="review-findings-btn">
+                <button 
+                  className="cd-btn cd-btn--primary" 
+                  id="review-findings-btn"
+                  onClick={() => navigate('/ai-findings')}
+                  title="Open AI findings and hypothesis reasoning"
+                >
                   <Brain size={13} /> Review Findings
                 </button>
-                <button className="cd-btn cd-btn--ghost" id="chat-ai-btn">
+                <button 
+                  className="cd-btn cd-btn--ghost" 
+                  id="chat-ai-btn"
+                  onClick={() => navigate('/intelligence-chat')}
+                  title="Ask questions about this case in Intelligence Chat"
+                >
                   <MessageSquare size={13} /> Chat with AI
                 </button>
               </div>
@@ -279,15 +346,20 @@ export default function CaseDetail() {
             </div>
             <div className="cd-panel-body cd-modules-body">
               {[
-                { label: 'Evidence Vault',     icon: HardDrive,    count: c.evidenceCount.toLocaleString() },
-                { label: 'Knowledge Graph',    icon: Share2,       count: 'View' },
-                { label: 'Timeline Analysis',  icon: Activity,     count: `${c.timeline.length} events` },
-                { label: 'Chain of Custody',   icon: CheckCircle2, count: 'Verified' },
-                { label: 'Generate Report',    icon: Download,     count: 'Export' },
+                { label: 'Evidence Vault',     icon: HardDrive,    count: c.evidenceCount.toLocaleString(), path: '/evidence' },
+                { label: 'Knowledge Graph',    icon: Share2,       count: 'View',                          path: '/knowledge-graph' },
+                { label: 'Timeline Analysis',  icon: Activity,     count: `${c.timeline.length} events`,  path: '/timeline' },
+                { label: 'Chain of Custody',   icon: CheckCircle2, count: 'Verified',                      path: '/chain-of-custody' },
+                { label: 'Generate Report',    icon: Download,     count: 'Export',                        path: '/reports' },
               ].map(m => {
                 const Icon = m.icon
                 return (
-                  <button key={m.label} className="cd-module-btn">
+                  <button 
+                    key={m.label} 
+                    className="cd-module-btn"
+                    onClick={() => navigate(m.path)}
+                    title={`Go to ${m.label}`}
+                  >
                     <div className="cd-module-icon"><Icon size={14} strokeWidth={1.7} /></div>
                     <span className="cd-module-label">{m.label}</span>
                     <span className="cd-module-count">{m.count}</span>

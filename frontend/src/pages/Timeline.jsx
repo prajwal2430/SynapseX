@@ -268,6 +268,34 @@ export default function Timeline() {
   const correlatedCount = TIMELINE_EVENTS.filter(e => e.correlated).length
   const criticalCount = TIMELINE_EVENTS.filter(e => e.risk === 'critical').length
 
+  const [toastMsg, setToastMsg] = useState(null)
+
+  const handleExportTimeline = () => {
+    const csvRows = [
+      ['Event ID', 'Timestamp (UTC)', 'Source', 'Entity', 'Risk', 'Correlated', 'Event Description', 'Detail', 'Evidence Reference'],
+      ...filteredEvents.map(e => [
+        e.id,
+        e.timeFormatted,
+        `"${e.source}"`,
+        `"${e.entity}"`,
+        e.risk,
+        e.correlated ? 'Yes' : 'No',
+        `"${e.event.replace(/"/g, '""')}"`,
+        `"${e.detail.replace(/"/g, '""')}"`,
+        `"${e.evidenceName || ''}"`
+      ])
+    ]
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(r => r.join(',')).join('\n')
+    const link = document.createElement('a')
+    link.setAttribute('href', encodeURI(csvContent))
+    link.setAttribute('download', `synapsex_timeline_CASE-2026-001_${Date.now()}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setToastMsg(`Exported ${filteredEvents.length} timeline events to CSV`)
+    setTimeout(() => setToastMsg(null), 3000)
+  }
+
   const handleSelectRelated = (relId) => {
     const target = TIMELINE_EVENTS.find(e => e.id === relId)
     if (target) {
@@ -279,6 +307,30 @@ export default function Timeline() {
 
   return (
     <div className={`tl-root ${selectedEvent ? 'tl-root--panel-open' : ''}`}>
+
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          background: 'var(--surface)',
+          border: '1px solid var(--accent)',
+          borderRadius: '6px',
+          padding: '10px 16px',
+          color: 'var(--text)',
+          fontSize: '12px',
+          fontFamily: 'var(--font-mono)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <CheckCircle2 size={14} style={{ color: 'var(--accent)' }} />
+          <span>{toastMsg}</span>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════
           PAGE HEADER
@@ -305,7 +357,12 @@ export default function Timeline() {
             <span>{highlightChain ? 'Causal Chain Illuminated' : 'Highlight Causal Chain'}</span>
           </button>
           
-          <button className="tl-btn-primary" id="export-timeline-btn">
+          <button 
+            className="tl-btn-primary" 
+            id="export-timeline-btn"
+            onClick={handleExportTimeline}
+            title="Download chronological event log CSV"
+          >
             <Download size={13} />
             <span>Export Timeline (CSV / STIX 2.1)</span>
           </button>

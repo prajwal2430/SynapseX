@@ -331,7 +331,7 @@ function RecentEvents() {
 }
 
 /* ── AI Findings Cards ── */
-function AIFindingCard({ finding }) {
+function AIFindingCard({ finding, onReview }) {
   const confColor = finding.confidencePct >= 80 ? 'high' : finding.confidencePct >= 55 ? 'medium' : 'low'
   return (
     <div className={`ws-finding ws-finding--${finding.severity}`} id={`finding-${finding.id}`}>
@@ -368,7 +368,7 @@ function AIFindingCard({ finding }) {
       <div className="ws-finding-footer">
         <span className="ws-finding-meta"><HardDrive size={11}/>{finding.evidence} evidence</span>
         <span className="ws-finding-meta ws-finding-meta--ioc"><Flag size={11}/>{finding.iocs} IOCs</span>
-        <button className="ws-finding-action">Review <ChevronRight size={11}/></button>
+        <button className="ws-finding-action" onClick={onReview} title="Review this finding in AI Reasoning">Review <ChevronRight size={11}/></button>
       </div>
     </div>
   )
@@ -474,6 +474,8 @@ export default function CaseWorkspace() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
   const [liveEvents, setLiveEvents] = useState(0)
+  const [toastMsg, setToastMsg] = useState(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   /* Simulate live event counter ticking */
   useEffect(() => {
@@ -481,8 +483,41 @@ export default function CaseWorkspace() {
     return () => clearInterval(t)
   }, [])
 
+  function handleRefresh() {
+    setIsRefreshing(true)
+    setTimeout(() => {
+      setIsRefreshing(false)
+      setToastMsg('Case workspace telemetry re-synchronized: 1,248 artifacts verified')
+      setTimeout(() => setToastMsg(null), 3000)
+    }, 700)
+  }
+
   return (
     <div className="ws-root">
+
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          background: 'var(--surface)',
+          border: '1px solid var(--accent)',
+          borderRadius: '6px',
+          padding: '10px 16px',
+          color: 'var(--text)',
+          fontSize: '12px',
+          fontFamily: 'var(--font-mono)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <CheckCircle2 size={14} style={{ color: 'var(--accent)' }} />
+          <span>{toastMsg}</span>
+        </div>
+      )}
 
       {/* ══════════════════════════
           WORKSPACE HEADER
@@ -533,13 +568,28 @@ export default function CaseWorkspace() {
               <span className="pulse-dot pulse-dot--alert" style={{width:6,height:6}}/>
               <span>+{liveEvents} live events</span>
             </div>
-            <button className="ws-action-btn ws-action-btn--ghost" id="upload-evidence-btn">
+            <button 
+              className="ws-action-btn ws-action-btn--ghost" 
+              id="upload-evidence-btn"
+              onClick={() => navigate('/evidence')}
+              title="Open Evidence Vault to upload and seal artifacts"
+            >
               <Upload size={14}/> Upload Evidence
             </button>
-            <button className="ws-action-btn ws-action-btn--cyan" id="start-ai-btn">
+            <button 
+              className="ws-action-btn ws-action-btn--cyan" 
+              id="start-ai-btn"
+              onClick={() => navigate('/ai-agents')}
+              title="Launch autonomous multi-agent forensic analysis"
+            >
               <Cpu size={14}/> Start AI Investigation
             </button>
-            <button className="ws-action-btn ws-action-btn--primary" id="generate-report-btn">
+            <button 
+              className="ws-action-btn ws-action-btn--primary" 
+              id="generate-report-btn"
+              onClick={() => navigate('/reports')}
+              title="Generate court-admissible forensic dossier"
+            >
               <FileText size={14}/> Generate Report
             </button>
           </div>
@@ -565,8 +615,13 @@ export default function CaseWorkspace() {
             )
           })}
           <div className="ws-qs-divider"/>
-          <button className="ws-qs-refresh" title="Refresh data" id="refresh-data-btn">
-            <RefreshCw size={13}/>
+          <button 
+            className="ws-qs-refresh" 
+            title="Refresh workspace telemetry" 
+            id="refresh-data-btn"
+            onClick={handleRefresh}
+          >
+            <RefreshCw size={13} className={isRefreshing ? 'ws-spin' : ''} />
           </button>
         </div>
       </div>

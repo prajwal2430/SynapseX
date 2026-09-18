@@ -356,7 +356,12 @@ export default function ChainOfCustody() {
             <span>{isVerifying ? 'Verifying Hashes...' : 'Verify Cryptographic Seal'}</span>
           </button>
 
-          <button className="custody-btn custody-btn--primary">
+          <button 
+            className="custody-btn custody-btn--primary"
+            onClick={() => window.print()}
+            title="Print or save formal Chain of Custody Certificate as PDF"
+            id="export-custody-pdf-btn"
+          >
             <Printer size={13} />
             <span>Export Custody Certificate (PDF)</span>
           </button>
