@@ -46,6 +46,8 @@ async def lifespan(app: FastAPI):
     """
     # ── Startup Phase ────────────────────────────────────────────────────────
     logger.info("[Lifespan] Starting ADEIP backend application...")
+    from app.database.migrate_evidence_columns import ensure_evidence_columns
+    ensure_evidence_columns()
     await mongo_manager.connect_to_mongo()
     await mongo_manager.init_collection_indexes()
 

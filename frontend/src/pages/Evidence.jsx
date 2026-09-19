@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   Upload, HardDrive, Shield, CheckCircle2,
   Clock, Search, Filter, Download, X,
@@ -13,6 +13,56 @@ import {
   Image, FileCheck, Check
 } from 'lucide-react'
 import './Evidence.css'
+import { evidenceApi } from '../services/evidenceApi'
+
+/**
+ * Maps database evidence records to UI state model.
+ */
+function mapBackendToEvidenceItem(backendEv) {
+  const { type, typeKey } = detectEvidenceType(backendEv.original_filename)
+  const sizeBytes = backendEv.file_size || 0
+  const sizeStr = sizeBytes > 1024 * 1024 
+    ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB` 
+    : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`
+
+  const uploadDate = backendEv.uploaded_at
+    ? new Date(backendEv.uploaded_at).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
+    : new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
+
+  return {
+    id: `EVD-${backendEv.id}`,
+    rawId: backendEv.id,
+    evidenceNumber: backendEv.evidence_number || `E-${String(backendEv.id).padStart(3, '0')}`,
+    fileName: backendEv.original_filename,
+    storedFileName: backendEv.stored_filename,
+    fileUrl: backendEv.file_url || evidenceApi.getFileUrl(backendEv.id),
+    type: backendEv.file_type || type,
+    typeKey,
+    mimeType: backendEv.mime_type,
+    source: backendEv.agent_type ? `Agent Ingestion (${backendEv.agent_type})` : 'Forensic Vault Upload',
+    caseId: `CASE-${backendEv.case_id || '001'}`,
+    rawCaseId: backendEv.case_id || 1,
+    sha256: backendEv.sha256_hash,
+    size: sizeStr,
+    fileSizeBytes: sizeBytes,
+    uploadTime: uploadDate,
+    collectedBy: backendEv.uploader_name || 'Special Agent M. Reynolds',
+    collectionMethod: 'Cryptographic Secure Ingestion',
+    processingStatus: backendEv.processing_status || 'verified',
+    storageStatus: backendEv.storage_status || 'stored',
+    flagged: false,
+    agentType: backendEv.agent_type,
+    custodyChain: [
+      { action: 'Acquired', by: backendEv.uploader_name || 'Special Agent M. Reynolds', time: uploadDate, note: 'Direct evidence import via analyst station' },
+      { action: 'Hashed', by: 'SynapseX Vault Engine', time: uploadDate, note: `SHA-256 sealed: ${backendEv.sha256_hash ? backendEv.sha256_hash.slice(0, 16) : ''}...` },
+      { action: 'Sealed', by: 'Evidence Vault Integrity Service', time: uploadDate, note: 'Cryptographic tamper protection locked into persistent storage' },
+    ],
+    aiEvents: [
+      { time: uploadDate.slice(11, 19), label: `Artifact ${backendEv.original_filename} ingested, SHA-256 verified and indexed`, type: 'normal' },
+      { time: uploadDate.slice(11, 19), label: 'Automated entity & metadata extraction complete', type: 'normal' },
+    ],
+  }
+}
 
 /* ═══════════════════════════════════════
    INITIAL EVIDENCE LEDGER
@@ -411,6 +461,45 @@ function EvidencePanel({
           </button>
         </div>
 
+        {/* Forensic Artifact Live Preview */}
+        {item.fileUrl && (
+          <div className="ev-panel-section">
+            <span className="ev-panel-section-title"><Eye size={13}/> Live Forensic Artifact Preview</span>
+            <div className="ev-preview-box">
+              {['mp4', 'webm', 'mov', 'mkv', 'avi'].some(ext => item.fileName.toLowerCase().endsWith(ext)) || item.typeKey === 'video' ? (
+                <video controls className="ev-preview-media" key={item.fileUrl} preload="metadata">
+                  <source src={item.fileUrl} type={item.mimeType || 'video/mp4'} />
+                  Video preview unavailable in browser.
+                </video>
+              ) : ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].some(ext => item.fileName.toLowerCase().endsWith(ext)) ? (
+                <audio controls className="ev-preview-media" key={item.fileUrl} preload="metadata" style={{ height: '44px' }}>
+                  <source src={item.fileUrl} type={item.mimeType || 'audio/mpeg'} />
+                  Audio preview unavailable in browser.
+                </audio>
+              ) : ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg'].some(ext => item.fileName.toLowerCase().endsWith(ext)) ? (
+                <div className="ev-preview-img-wrap">
+                  <img src={item.fileUrl} alt={item.fileName} className="ev-preview-img" loading="lazy" />
+                </div>
+              ) : item.fileName.toLowerCase().endsWith('.pdf') ? (
+                <iframe src={item.fileUrl} title={item.fileName} className="ev-preview-frame" />
+              ) : (
+                <div style={{ padding: '8px', fontSize: '11px', color: 'var(--gray-400)', fontFamily: 'var(--font-mono)' }}>
+                  <span>{item.type} · Stored persistently in evidence vault</span>
+                </div>
+              )}
+
+              <div className="ev-preview-actions">
+                <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="ev-preview-link-btn" title="Open artifact in new browser tab">
+                  <Eye size={11} /> Open in Tab
+                </a>
+                <a href={item.fileUrl} download={item.fileName} className="ev-preview-link-btn" title="Download physical evidence binary">
+                  <Download size={11} /> Download File
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* File Info */}
         <div className="ev-panel-section">
           <span className="ev-panel-section-title"><HardDrive size={13}/> File Information</span>
@@ -651,7 +740,8 @@ function EvidencePanel({
    MAIN PAGE
 ═══════════════════════════════════════ */
 export default function Evidence() {
-  const [evidenceList, setEvidenceList] = useState(INITIAL_EVIDENCE_ITEMS)
+  const [evidenceList, setEvidenceList] = useState([])
+  const [isLoading,    setIsLoading]    = useState(true)
   const [search,        setSearch]        = useState('')
   const [statusFilter,  setStatus]       = useState('all') // all | verified | processing | queued | flagged
   const [typeFilter,    setType]         = useState('all')
@@ -659,12 +749,44 @@ export default function Evidence() {
   const [sortField,     setSortField]    = useState('id')
   const [sortDir,       setSortDir]      = useState('asc')
   const [toastMessage,  setToastMessage] = useState(null)
+  const [deleteTarget,  setDeleteTarget] = useState(null)
+  const [isDeleting,    setIsDeleting]   = useState(false)
 
   const headerFileInputRef = useRef(null)
 
   function showToast(msg) {
     setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3000)
+    setTimeout(() => setToastMessage(null), 3500)
+  }
+
+  // Load persistent evidence from database on mount
+  useEffect(() => {
+    loadEvidence()
+  }, [])
+
+  async function loadEvidence() {
+    try {
+      setIsLoading(true)
+      const backendItems = await evidenceApi.fetchEvidence()
+      if (backendItems && backendItems.length > 0) {
+        const mapped = backendItems.map(mapBackendToEvidenceItem)
+        setEvidenceList(mapped)
+        setSelected(prev => {
+          if (!prev) return mapped[0]
+          return mapped.find(m => m.id === prev.id) || mapped[0]
+        })
+      } else {
+        // Fallback to initial seeds if database is completely fresh
+        setEvidenceList(INITIAL_EVIDENCE_ITEMS)
+        setSelected(INITIAL_EVIDENCE_ITEMS[0])
+      }
+    } catch (err) {
+      console.warn('Failed to load evidence from server, falling back to local vault:', err)
+      setEvidenceList(INITIAL_EVIDENCE_ITEMS)
+      setSelected(INITIAL_EVIDENCE_ITEMS[0])
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   function toggleSort(field) {
@@ -672,63 +794,36 @@ export default function Evidence() {
     else { setSortField(field); setSortDir('asc') }
   }
 
-  // Handle uploading new evidence artifacts with real SHA-256
+  // Handle uploading new evidence artifacts to persistent backend
   async function handleNewEvidenceUpload(files) {
     if (!files || files.length === 0) return
-    const now = new Date()
-    const timeStr = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
-
     const fileList = Array.from(files)
-    const newItems = []
+    const uploadedItems = []
+    let failedCount = 0
 
     for (let i = 0; i < fileList.length; i++) {
       const f = fileList[i]
-      const nextIdNum = evidenceList.length + i + 1
-      const id = `E-${String(nextIdNum).padStart(3, '0')}`
-      const { type, typeKey } = detectEvidenceType(f.name)
-      const sizeStr = f.size > 1024 * 1024 
-        ? `${(f.size / (1024 * 1024)).toFixed(1)} MB` 
-        : `${Math.max(1, Math.round(f.size / 1024))} KB`
-
-      // Real browser SHA-256 calculation
-      let sha256 = ''
       try {
-        const buffer = await f.arrayBuffer()
-        const hashBuf = await window.crypto.subtle.digest('SHA-256', buffer)
-        sha256 = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('')
-      } catch {
-        sha256 = generateFallbackHash(f.name + f.size + Date.now())
+        const createdEvidence = await evidenceApi.uploadEvidence(f, {
+          caseId: 1,
+          agentType: 'evidence_agent',
+        })
+        const mapped = mapBackendToEvidenceItem(createdEvidence)
+        uploadedItems.push(mapped)
+      } catch (err) {
+        console.error('Failed to upload file:', f.name, err)
+        failedCount++
       }
-
-      newItems.push({
-        id,
-        fileName: f.name,
-        type,
-        typeKey,
-        source: 'Analyst Direct Secure Ingestion',
-        caseId: 'CASE-2026-001',
-        sha256,
-        size: sizeStr,
-        uploadTime: timeStr,
-        collectedBy: 'Special Agent M. Reynolds',
-        collectionMethod: 'Cryptographic Secure Ingestion',
-        processingStatus: 'verified',
-        flagged: false,
-        custodyChain: [
-          { action: 'Acquired', by: 'Special Agent M. Reynolds', time: timeStr, note: 'Direct evidence import via analyst station' },
-          { action: 'Hashed', by: 'SynapseX Vault Engine', time: timeStr, note: `SHA-256 sealed: ${sha256.slice(0, 16)}...` },
-          { action: 'Sealed', by: 'Evidence Vault Integrity Service', time: timeStr, note: 'Cryptographic tamper protection locked into ledger' },
-        ],
-        aiEvents: [
-          { time: timeStr.slice(11, 19), label: `Artifact ${f.name} ingested, SHA-256 verified and indexed`, type: 'normal' },
-          { time: timeStr.slice(11, 19), label: 'Automated entity & metadata extraction complete', type: 'normal' },
-        ]
-      })
     }
 
-    setEvidenceList(prev => [...newItems, ...prev])
-    setSelected(newItems[0])
-    showToast(`Successfully uploaded and cryptographically sealed ${newItems.length} artifact(s)`)
+    if (uploadedItems.length > 0) {
+      setEvidenceList(prev => [...uploadedItems, ...prev])
+      setSelected(uploadedItems[0])
+      showToast(`Successfully uploaded and securely stored ${uploadedItems.length} artifact(s)`)
+    }
+    if (failedCount > 0) {
+      showToast(`Warning: ${failedCount} artifact(s) failed to upload.`)
+    }
   }
 
   // Handle Export Manifest
@@ -746,7 +841,7 @@ export default function Evidence() {
         vaultIntegrityHash: generateFallbackHash('CASE-2026-001-VAULT-LEDGER-' + Date.now()),
       },
       artifacts: evidenceList.map(item => ({
-        evidenceId: item.id,
+        evidenceId: item.evidenceNumber || item.id,
         fileName: item.fileName,
         type: item.type,
         fileSize: item.size,
@@ -772,6 +867,16 @@ export default function Evidence() {
 
   // Handle Download single artifact
   function handleDownloadArtifact(item) {
+    if (item.fileUrl) {
+      const a = document.createElement('a')
+      a.href = item.fileUrl
+      a.download = item.fileName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      showToast(`Downloading artifact: ${item.fileName}`)
+      return
+    }
     const data = JSON.stringify(item, null, 2)
     const blob = new Blob([data], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -820,21 +925,53 @@ export default function Evidence() {
     showToast(nextFlag ? `Flagged ${item.id} as suspicious artifact` : `Removed flag from ${item.id}`)
   }
 
-  // Handle Delete Artifact
-  function handleDeleteEvidence(item, e) {
+  // Trigger Delete Confirmation Modal
+  function handleDeleteClick(item, e) {
     if (e) e.stopPropagation()
-    if (window.confirm(`Are you sure you want to delete evidence artifact ${item.id} (${item.fileName})?`)) {
-      setEvidenceList(prev => prev.filter(ev => ev.id !== item.id))
-      if (selectedItem?.id === item.id) setSelected(null)
-      showToast(`Evidence artifact ${item.id} removed from vault`)
+    setDeleteTarget(item)
+  }
+
+  // Confirm and execute persistent deletion
+  async function confirmDeleteEvidence() {
+    if (!deleteTarget) return
+    setIsDeleting(true)
+    try {
+      if (deleteTarget.rawId) {
+        await evidenceApi.deleteEvidence(deleteTarget.rawId)
+      }
+      setEvidenceList(prev => prev.filter(ev => ev.id !== deleteTarget.id))
+      if (selectedItem?.id === deleteTarget.id) setSelected(null)
+      showToast('Evidence deleted successfully.')
+      setDeleteTarget(null)
+    } catch (err) {
+      console.error('Failed to delete evidence:', err)
+      showToast('Failed to delete evidence. The evidence is still available.')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
   // Handle Re-verify Hash
-  function handleVerifyIntegrity(item) {
-    setEvidenceList(prev => prev.map(ev => ev.id === item.id ? { ...ev, processingStatus: 'verified' } : ev))
-    setSelected(prev => prev && prev.id === item.id ? { ...prev, processingStatus: 'verified' } : prev)
-    showToast(`SHA-256 integrity verified for ${item.id}: 100% Match`)
+  async function handleVerifyIntegrity(item) {
+    try {
+      if (item.rawId) {
+        const result = await evidenceApi.verifyIntegrity(item.rawId)
+        if (result.is_valid) {
+          setEvidenceList(prev => prev.map(ev => ev.id === item.id ? { ...ev, processingStatus: 'verified' } : ev))
+          setSelected(prev => prev && prev.id === item.id ? { ...prev, processingStatus: 'verified' } : prev)
+          showToast(`SHA-256 integrity verified for ${item.id}: 100% Match`)
+        } else {
+          showToast(`Integrity check: ${result.message}`)
+        }
+        return
+      }
+      setEvidenceList(prev => prev.map(ev => ev.id === item.id ? { ...ev, processingStatus: 'verified' } : ev))
+      setSelected(prev => prev && prev.id === item.id ? { ...prev, processingStatus: 'verified' } : prev)
+      showToast(`SHA-256 integrity verified for ${item.id}: 100% Match`)
+    } catch (err) {
+      console.error('Integrity verify error:', err)
+      showToast('Failed to run cryptographic verification.')
+    }
   }
 
   // Handle Add Custody Log
@@ -1120,7 +1257,7 @@ export default function Evidence() {
                         </button>
                         <button 
                           className="ev-row-btn" 
-                          onClick={e => handleDeleteEvidence(item, e)} 
+                          onClick={e => handleDeleteClick(item, e)} 
                           title="Delete artifact from vault"
                           style={{ color: 'var(--alert-critical)' }}
                         >
@@ -1146,10 +1283,60 @@ export default function Evidence() {
           onDownload={handleDownloadArtifact}
           onRunAnalysis={handleRunAnalysis}
           onToggleFlag={handleToggleFlag}
-          onDelete={handleDeleteEvidence}
+          onDelete={handleDeleteClick}
           onVerifyIntegrity={handleVerifyIntegrity}
           onAddCustodyLog={handleAddCustodyLog}
         />
+      )}
+
+      {/* ── Delete Confirmation Modal ── */}
+      {deleteTarget && (
+        <div className="ev-modal-backdrop" onClick={() => !isDeleting && setDeleteTarget(null)}>
+          <div className="ev-modal-dialog" onClick={e => e.stopPropagation()}>
+            <div className="ev-modal-header">
+              <div className="ev-modal-icon-wrap">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="ev-modal-title">Delete Evidence?</h3>
+                <span style={{ fontSize: '11px', color: 'var(--gray-500)', fontFamily: 'var(--font-mono)' }}>
+                  Permanent Forensic Removal
+                </span>
+              </div>
+            </div>
+
+            <div className="ev-modal-body">
+              <p>
+                This will permanently remove this evidence file from persistent storage and delete its database record.
+              </p>
+              <div className="ev-modal-artifact-badge">
+                <strong>{deleteTarget.evidenceNumber || deleteTarget.id}</strong> — {deleteTarget.fileName} ({deleteTarget.size})
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--alert-critical)', margin: 0 }}>
+                ⚠️ This action is irrevocable and will be recorded in the forensic audit ledger.
+              </p>
+            </div>
+
+            <div className="ev-modal-footer">
+              <button 
+                type="button"
+                className="ev-modal-cancel-btn" 
+                disabled={isDeleting}
+                onClick={() => setDeleteTarget(null)}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="ev-modal-delete-btn" 
+                disabled={isDeleting}
+                onClick={confirmDeleteEvidence}
+              >
+                {isDeleting ? <><Loader2 size={13} className="ev-spin" /> Deleting...</> : <><Trash2 size={13} /> Delete Permanently</>}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

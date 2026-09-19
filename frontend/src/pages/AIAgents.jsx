@@ -12,6 +12,7 @@ import {
   Fingerprint
 } from 'lucide-react'
 import './AIAgents.css'
+import { evidenceApi } from '../services/evidenceApi'
 
 /* ═══════════════════════════════════════════════════
    MULTI-AGENT FLEET DEFINITIONS WITH FUNCTIONAL ROLES
@@ -607,6 +608,57 @@ export default function AIAgents() {
     return () => clearInterval(interval)
   }, [isSimulating])
 
+  // Load persistent agent evidence from backend on mount
+  useEffect(() => {
+    async function loadBackendAgentDocs() {
+      try {
+        const evidenceItems = await evidenceApi.fetchEvidence()
+        if (evidenceItems && evidenceItems.length > 0) {
+          const agentDocsMap = {}
+          evidenceItems.forEach(item => {
+            const agentKey = item.agent_type || 'chief'
+            const sizeBytes = item.file_size || 0
+            const sizeStr = sizeBytes > 1024 * 1024
+              ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+              : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`
+
+            const agentDef = agents.find(a => a.id === agentKey) || agents[0]
+            const roleOutput = generateDynamicRoleOutput(agentDef, item.original_filename, sizeStr, item.sha256_hash)
+
+            const docObj = {
+              id: `doc-${item.id}`,
+              rawId: item.id,
+              name: item.original_filename,
+              size: sizeStr,
+              type: item.mime_type || item.file_type || 'Forensic Document',
+              sha256: item.sha256_hash,
+              uploadedAt: item.uploaded_at ? new Date(item.uploaded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Saved',
+              roleOutput,
+              fileUrl: item.file_url,
+              isCustom: true,
+            }
+
+            if (!agentDocsMap[agentKey]) agentDocsMap[agentKey] = []
+            agentDocsMap[agentKey].push(docObj)
+          })
+
+          setAgentDocs(prev => {
+            const merged = { ...prev }
+            Object.keys(agentDocsMap).forEach(k => {
+              const existing = merged[k] || []
+              const filtered = existing.filter(ex => !agentDocsMap[k].some(nd => nd.rawId === ex.rawId || nd.name === ex.name))
+              merged[k] = [...agentDocsMap[k], ...filtered]
+            })
+            return merged
+          })
+        }
+      } catch (err) {
+        console.warn('Could not load persistent agent docs:', err)
+      }
+    }
+    loadBackendAgentDocs()
+  }, [])
+
   // Sync selected agent object when agents state updates
   useEffect(() => {
     const updated = agents.find(a => a.id === selectedAgent.id)
@@ -647,43 +699,68 @@ export default function AIAgents() {
   /* ────────────────────────────────────────────────────────
      HANDLE USER DOCUMENT / EVIDENCE UPLOAD FOR AGENT
   ──────────────────────────────────────────────────────── */
-  const handleFileUpload = (files) => {
+  const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return
     const newDocs = []
 
-    Array.from(files).forEach(file => {
+    for (const file of Array.from(files)) {
       const sizeStr = file.size > 1024 * 1024 
         ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` 
         : `${Math.max(1, Math.round(file.size / 1024))} KB`
-      
-      const sha256 = generateMockSha256(file.name, file.size)
-      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
-      const roleOutput = generateDynamicRoleOutput(selectedAgent, file.name, sizeStr, sha256)
+      try {
+        const created = await evidenceApi.uploadEvidence(file, {
+          caseId: 1,
+          agentType: selectedAgent.id,
+        })
+        const sha256 = created.sha256_hash || generateMockSha256(file.name, file.size)
+        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        const roleOutput = generateDynamicRoleOutput(selectedAgent, file.name, sizeStr, sha256)
 
-      const docObj = {
-        id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-        name: file.name,
-        size: sizeStr,
-        type: file.type || 'Forensic Document',
-        sha256,
-        uploadedAt: now,
-        roleOutput,
-        isCustom: true
+        const docObj = {
+          id: `doc-${created.id}`,
+          rawId: created.id,
+          name: file.name,
+          size: sizeStr,
+          type: file.type || created.mime_type || 'Forensic Document',
+          sha256,
+          uploadedAt: now,
+          roleOutput,
+          fileUrl: created.file_url,
+          isCustom: true,
+        }
+        newDocs.push(docObj)
+      } catch (err) {
+        console.error('Failed to upload file to backend:', err)
+        // Fallback in-memory doc if network failed
+        const sha256 = generateMockSha256(file.name, file.size)
+        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        const roleOutput = generateDynamicRoleOutput(selectedAgent, file.name, sizeStr, sha256)
+        newDocs.push({
+          id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          name: file.name,
+          size: sizeStr,
+          type: file.type || 'Forensic Document',
+          sha256,
+          uploadedAt: now,
+          roleOutput,
+          isCustom: true,
+        })
       }
-      newDocs.push(docObj)
-    })
+    }
 
-    setAgentDocs(prev => {
-      const existing = prev[selectedAgent.id] || []
-      return {
-        ...prev,
-        [selectedAgent.id]: [...newDocs, ...existing]
-      }
-    })
+    if (newDocs.length > 0) {
+      setAgentDocs(prev => {
+        const existing = prev[selectedAgent.id] || []
+        return {
+          ...prev,
+          [selectedAgent.id]: [...newDocs, ...existing]
+        }
+      })
 
-    setActiveDoc(newDocs[0])
-    executeAgentOnDoc(selectedAgent, newDocs[0])
+      setActiveDoc(newDocs[0])
+      executeAgentOnDoc(selectedAgent, newDocs[0])
+    }
   }
 
   /* ────────────────────────────────────────────────────────
@@ -1029,10 +1106,19 @@ export default function AIAgents() {
   }
 
   // Remove document from agent
-  const removeDoc = (agentId, docId) => {
+  const removeDoc = async (agentId, docId) => {
+    const list = agentDocs[agentId] || []
+    const docToDelete = list.find(d => d.id === docId)
+    if (docToDelete?.rawId) {
+      try {
+        await evidenceApi.deleteEvidence(docToDelete.rawId)
+      } catch (err) {
+        console.error('Failed to delete evidence from backend:', err)
+      }
+    }
     setAgentDocs(prev => {
-      const list = prev[agentId] || []
-      const updated = list.filter(d => d.id !== docId)
+      const curList = prev[agentId] || []
+      const updated = curList.filter(d => d.id !== docId)
       return { ...prev, [agentId]: updated }
     })
     if (activeDoc?.id === docId) {
