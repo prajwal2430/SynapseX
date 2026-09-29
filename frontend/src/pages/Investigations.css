@@ -340,7 +340,7 @@
 .inv-row {
   cursor: pointer;
   transition: background var(--transition-fast);
-  animation: fadeInUp var(--transition-slow) ease both;
+  animation: fadeInUp 400ms ease both;
   position: relative;
 }
 .inv-row:hover { background: rgba(46, 127, 255, 0.04); }
@@ -608,7 +608,7 @@
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  animation: fadeInUp var(--transition-slow) ease both;
+  animation: fadeInUp 400ms ease both;
   transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
 }
 .inv-card:hover { transform: translateY(-3px); }

@@ -19,6 +19,7 @@ import IntelligenceChat from './pages/IntelligenceChat'
 import Reports          from './pages/Reports'
 import ChainOfCustody   from './pages/ChainOfCustody'
 import Settings         from './pages/Settings'
+import Styleguide       from './pages/Styleguide'
 
 export default function App() {
   return (
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="reports"                      element={<Reports />} />
             <Route path="chain-of-custody"             element={<ChainOfCustody />} />
             <Route path="settings"                     element={<Settings />} />
+            <Route path="styleguide"                   element={<Styleguide />} />
           </Route>
 
           {/* Catch-all fallback */}

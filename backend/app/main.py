@@ -74,6 +74,11 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning(f"[Lifespan] Database table initialization / seed note: {exc}")
 
+    try:
+        from app.database.migrate_evidence_columns import ensure_evidence_columns
+        ensure_evidence_columns()
+    except Exception as exc:
+        logger.warning(f"[Lifespan] Evidence column migration note: {exc}")
     await mongo_manager.connect_to_mongo()
     await mongo_manager.init_collection_indexes()
 

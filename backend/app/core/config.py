@@ -62,15 +62,20 @@ class Settings(BaseSettings):
     UPLOAD_STORAGE_DIR: str = "storage/evidence_vault"
     MAX_UPLOAD_SIZE_BYTES: int = 100 * 1024 * 1024  # 100 MB default max file size
     ALLOWED_EVIDENCE_EXTENSIONS: List[str] = [
-        ".csv",
-        ".json",
-        ".txt",
-        ".pdf",
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".mp4",
-        ".evtx",
+        # Documents & Forensic Reports
+        ".pdf", ".docx", ".doc", ".rtf", ".txt", ".odt",
+        # Structured Data & Logs
+        ".csv", ".tsv", ".json", ".xml", ".yaml", ".yml", ".sql", ".evtx", ".log", ".audit",
+        # Network & Memory & Disk Artifacts
+        ".pcap", ".pcapng", ".cap", ".raw", ".mem", ".dmp", ".vmem", ".e01", ".dd",
+        # Images
+        ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".svg",
+        # Audio Evidence
+        ".mp3", ".wav", ".aac", ".ogg", ".m4a", ".flac", ".wma",
+        # Video Evidence
+        ".mp4", ".avi", ".mkv", ".mov", ".webm", ".m4v", ".wmv",
+        # Archives
+        ".zip", ".tar", ".gz", ".7z",
     ]
 
     # Dangerous extensions explicitly blocked from evidence ingestion

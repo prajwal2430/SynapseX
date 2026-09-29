@@ -1,14 +1,13 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, Filter, Plus, FolderOpen,
   ChevronRight, ChevronUp, ChevronDown,
   SlidersHorizontal, AlertTriangle, Clock,
   HardDrive, Brain, Users, Shield,
-  ArrowUpDown, X, LayoutGrid, List, RefreshCw,
+  ArrowUpDown, X, LayoutGrid, List,
 } from 'lucide-react'
-import { api } from '../services/api'
-import { LoadingView, ErrorView, EmptyStateView } from '../components/common/StateViews'
+import { CASES } from '../data/cases'
 import './Investigations.css'
 
 /* ── helpers ── */
@@ -22,14 +21,22 @@ const PRIORITY_META = {
 }
 
 const STATUS_META = {
-  active:       { label: 'Active',       cls: 'active'  },
-  under_review: { label: 'Under Review', cls: 'review'  },
-  closed:       { label: 'Closed',       cls: 'closed'  },
-  archived:     { label: 'Archived',     cls: 'closed'  },
+  active:  { label: 'Active',       cls: 'active'  },
+  review:  { label: 'Under Review', cls: 'review'  },
+  closed:  { label: 'closed',       cls: 'closed'  },
+}
+
+const TYPE_COLORS = {
+  'Data Exfiltration':   'blue',
+  'Financial Fraud':     'amber',
+  'Unauthorized Access': 'cyan',
+  'Ransomware':          'red',
+  'Supply Chain Attack': 'purple',
+  'Phishing':            'gray',
 }
 
 function PriorityBadge({ level }) {
-  const m = PRIORITY_META[level?.toLowerCase()] || PRIORITY_META.medium
+  const m = PRIORITY_META[level] || PRIORITY_META.low
   return (
     <div className={`inv-priority inv-priority--${m.cls}`}>
       <span className="inv-priority-dot" />
@@ -39,7 +46,7 @@ function PriorityBadge({ level }) {
 }
 
 function StatusBadge({ status }) {
-  const m = STATUS_META[status?.toLowerCase()] || STATUS_META.active
+  const m = STATUS_META[status] || STATUS_META.closed
   return (
     <span className={`inv-status inv-status--${m.cls}`}>
       {status === 'active' && <span className="pulse-dot" style={{ width: 5, height: 5 }} />}
@@ -48,21 +55,35 @@ function StatusBadge({ status }) {
   )
 }
 
+function TypeChip({ type }) {
+  const color = TYPE_COLORS[type] || 'gray'
+  return <span className={`inv-type inv-type--${color}`}>{type}</span>
+}
+
+function RiskBar({ score }) {
+  const color = score >= 80 ? 'critical' : score >= 60 ? 'high' : score >= 40 ? 'medium' : 'low'
+  return (
+    <div className="inv-risk-wrap" title={`Risk score: ${score}`}>
+      <div className={`inv-risk-bar inv-risk-bar--${color}`} style={{ width: `${score}%` }} />
+    </div>
+  )
+}
+
 /* ── Stat strip ── */
 function StatsStrip({ cases = [] }) {
   const active   = cases.filter(c => c.status === 'active').length
-  const review   = cases.filter(c => c.status === 'under_review' || c.status === 'review').length
-  const closed   = cases.filter(c => c.status === 'closed' || c.status === 'archived').length
+  const review   = cases.filter(c => c.status === 'review').length
+  const closed   = cases.filter(c => c.status === 'closed').length
   const critical = cases.filter(c => c.priority === 'critical').length
-
   return (
     <div className="inv-stats-strip">
       {[
-        { label: 'Total Cases',   value: cases.length, color: 'blue'  },
-        { label: 'Active',        value: active,       color: 'green' },
-        { label: 'Under Review',  value: review,       color: 'amber' },
-        { label: 'Closed',        value: closed,       color: 'gray'  },
-        { label: 'Critical',      value: critical,     color: 'red'   },
+        { label: 'Total Cases',   value: cases.length,       color: 'blue'  },
+        { label: 'Active',        value: active,             color: 'green' },
+        { label: 'Under Review',  value: review,             color: 'amber' },
+        { label: 'Closed',        value: closed,             color: 'gray'  },
+        { label: 'Critical',      value: critical,           color: 'red'   },
+        { label: 'Total Evidence',value: cases.reduce((a,c) => a + (c.evidenceCount || 0), 0).toLocaleString(), color: 'cyan' },
       ].map(s => (
         <div key={s.label} className={`inv-stat inv-stat--${s.color}`}>
           <span className="inv-stat-value">{s.value}</span>
@@ -79,105 +100,99 @@ function StatsStrip({ cases = [] }) {
 export default function Investigations() {
   const navigate = useNavigate()
 
-  const [cases, setCases] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [casesList, setCasesList] = useState(CASES)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [toastMsg, setToastMsg] = useState(null)
+  const [newCaseData, setNewCaseData] = useState({
+    name: '',
+    type: 'Data Exfiltration',
+    priority: 'high',
+    tlp: 'TLP:AMBER',
+    classification: 'CONFIDENTIAL',
+    lead: 'Special Agent M. Reynolds',
+    description: '',
+    tags: 'Data, Insider, Network'
+  })
 
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatus] = useState('all')
+  const [search,     setSearch]     = useState('')
+  const [statusFilter, setStatus]   = useState('all')
   const [priorityFilter, setPriority] = useState('all')
-  const [sortField, setSortField] = useState('lastUpdated')
-  const [sortDir, setSortDir] = useState('desc')
-  const [viewMode, setViewMode] = useState('table')   // 'table' | 'card'
+  const [sortField,  setSortField]  = useState('lastUpdated')
+  const [sortDir,    setSortDir]    = useState('asc')
+  const [viewMode,   setViewMode]   = useState('table')   // 'table' | 'card'
   const [filtersOpen, setFiltersOpen] = useState(false)
-
-  // Create Case Modal
-  const [createModalOpen, setCreateModalOpen] = useState(false)
-  const [newTitle, setNewTitle] = useState('')
-  const [newCaseNumber, setNewCaseNumber] = useState('')
-  const [newDescription, setNewDescription] = useState('')
-  const [newPriority, setNewPriority] = useState('medium')
-  const [submitting, setSubmitting] = useState(false)
-
-  const fetchCases = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const res = await api.cases.list({ pageSize: 100 })
-      setCases(res?.items || [])
-    } catch (err) {
-      setError(err.message || 'Failed to connect to backend investigation database.')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchCases()
-  }, [fetchCases])
-
-  const handleCreateCase = async (e) => {
-    e.preventDefault()
-    if (!newTitle.trim()) return
-    try {
-      setSubmitting(true)
-      const created = await api.cases.create({
-        title: newTitle.trim(),
-        case_number: newCaseNumber.trim() || undefined,
-        description: newDescription.trim() || undefined,
-        priority: newPriority,
-      })
-      setCreateModalOpen(false)
-      setNewTitle('')
-      setNewCaseNumber('')
-      setNewDescription('')
-      await fetchCases()
-      if (created?.id) {
-        navigate(`/investigations/${created.id}`)
-      }
-    } catch (err) {
-      alert(`Case creation error: ${err.message}`)
-    } finally {
-      setSubmitting(false)
-    }
-  }
 
   /* ── derived list ── */
   const filtered = useMemo(() => {
-    let list = [...cases]
-    if (search) {
-      const q = search.toLowerCase()
-      list = list.filter(c =>
-        (c.case_number && c.case_number.toLowerCase().includes(q)) ||
-        (c.title && c.title.toLowerCase().includes(q)) ||
-        (c.description && c.description.toLowerCase().includes(q))
-      )
-    }
-    if (statusFilter !== 'all') list = list.filter(c => c.status === statusFilter)
+    let list = [...casesList]
+    if (search)         list = list.filter(c =>
+      c.id.toLowerCase().includes(search.toLowerCase()) ||
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.type.toLowerCase().includes(search.toLowerCase()) ||
+      c.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))
+    )
+    if (statusFilter !== 'all')   list = list.filter(c => c.status === statusFilter)
     if (priorityFilter !== 'all') list = list.filter(c => c.priority === priorityFilter)
 
     list.sort((a, b) => {
       let va, vb
-      if (sortField === 'priority') {
-        va = PRIORITY_ORDER[a.priority] ?? 99
-        vb = PRIORITY_ORDER[b.priority] ?? 99
-      } else if (sortField === 'id') {
-        va = a.case_number || a.id
-        vb = b.case_number || b.id
-      } else {
-        va = a.created_at || a.id
-        vb = b.created_at || b.id
-      }
+      if (sortField === 'priority')      { va = PRIORITY_ORDER[a.priority]; vb = PRIORITY_ORDER[b.priority] }
+      else if (sortField === 'evidence') { va = a.evidenceCount; vb = b.evidenceCount }
+      else if (sortField === 'findings') { va = a.aiFindings; vb = b.aiFindings }
+      else if (sortField === 'risk')     { va = a.riskScore; vb = b.riskScore }
+      else                               { va = a.id; vb = b.id }
       if (va < vb) return sortDir === 'asc' ? -1 : 1
-      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      if (va > vb) return sortDir === 'asc' ?  1 : -1
       return 0
     })
     return list
-  }, [cases, search, statusFilter, priorityFilter, sortField, sortDir])
+  }, [casesList, search, statusFilter, priorityFilter, sortField, sortDir])
 
   function toggleSort(field) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortField(field); setSortDir('asc') }
+  }
+
+  function handleCreateCase(e) {
+    e.preventDefault()
+    if (!newCaseData.name.trim()) return
+    const nextIdNum = casesList.length + 1
+    const id = `CASE-2026-${String(nextIdNum).padStart(3, '0')}`
+    const createdCase = {
+      id,
+      name: newCaseData.name.trim(),
+      type: newCaseData.type,
+      status: 'active',
+      priority: newCaseData.priority,
+      tlp: newCaseData.tlp,
+      classification: newCaseData.classification,
+      lead: newCaseData.lead,
+      openedDate: new Date().toISOString().slice(0, 10),
+      lastUpdated: 'Just now',
+      lastUpdatedFull: new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC',
+      evidenceCount: 0,
+      aiFindings: 0,
+      riskScore: newCaseData.priority === 'critical' ? 88 : newCaseData.priority === 'high' ? 68 : 45,
+      riskLabel: newCaseData.priority === 'critical' ? 'Critical' : newCaseData.priority === 'high' ? 'High' : 'Medium',
+      tags: newCaseData.tags.split(',').map(t => t.trim()).filter(Boolean),
+      team: [newCaseData.lead],
+      description: newCaseData.description.trim() || 'Active forensic investigation.',
+      timeline: []
+    }
+    setCasesList(prev => [createdCase, ...prev])
+    setIsCreateOpen(false)
+    setNewCaseData({
+      name: '',
+      type: 'Data Exfiltration',
+      priority: 'high',
+      tlp: 'TLP:AMBER',
+      classification: 'CONFIDENTIAL',
+      lead: 'Special Agent M. Reynolds',
+      description: '',
+      tags: 'Data, Insider, Network'
+    })
+    setToastMsg(`Investigation ${id} created successfully`)
+    setTimeout(() => setToastMsg(null), 3500)
   }
 
   function SortIcon({ field }) {
@@ -190,6 +205,26 @@ export default function Investigations() {
   return (
     <div className="inv-root">
 
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          background: 'var(--surface)',
+          border: '1px solid var(--accent)',
+          borderRadius: '6px',
+          padding: '10px 16px',
+          color: 'var(--text)',
+          fontSize: '12px',
+          fontFamily: 'var(--font-mono)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          zIndex: 9999,
+        }}>
+          {toastMsg}
+        </div>
+      )}
+
       {/* ── Page header ── */}
       <div className="inv-page-header">
         <div className="inv-header-left">
@@ -199,17 +234,10 @@ export default function Investigations() {
           </div>
           <h1 className="inv-page-title">Investigations</h1>
           <p className="inv-page-sub">
-            {cases.length} total case{cases.length !== 1 ? 's' : ''} · {cases.filter(c => c.status === 'active').length} active
+            {casesList.length} cases · {casesList.filter(c=>c.status==='active').length} active
           </p>
         </div>
         <div className="inv-header-right">
-          <button
-            className="inv-btn inv-btn--ghost"
-            onClick={fetchCases}
-            title="Refresh from database"
-          >
-            <RefreshCw size={14} />
-          </button>
           <button
             className="inv-btn inv-btn--ghost"
             id="toggle-view-btn"
@@ -218,10 +246,11 @@ export default function Investigations() {
           >
             {viewMode === 'table' ? <LayoutGrid size={15} /> : <List size={15} />}
           </button>
-          <button
-            className="inv-btn inv-btn--primary"
+          <button 
+            className="inv-btn inv-btn--primary" 
             id="create-case-btn"
-            onClick={() => setCreateModalOpen(true)}
+            onClick={() => setIsCreateOpen(true)}
+            title="Open new case creation form"
           >
             <Plus size={15} />
             Create New Case
@@ -230,7 +259,7 @@ export default function Investigations() {
       </div>
 
       {/* ── Stats strip ── */}
-      <StatsStrip cases={cases} />
+      <StatsStrip cases={casesList} />
 
       {/* ── Toolbar ── */}
       <div className="inv-toolbar">
@@ -240,7 +269,7 @@ export default function Investigations() {
           <input
             id="case-search"
             type="text"
-            placeholder="Search by case number, title, description…"
+            placeholder="Search by case ID, name, type, or tag…"
             className="inv-search"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -254,7 +283,7 @@ export default function Investigations() {
 
         {/* Status filter */}
         <div className="inv-filter-group">
-          {['all', 'active', 'under_review', 'closed'].map(s => (
+          {['all', 'active', 'review', 'closed'].map(s => (
             <button
               key={s}
               id={`status-filter-${s}`}
@@ -300,9 +329,11 @@ export default function Investigations() {
         <div className="inv-advanced-filters">
           <span className="inv-af-label">Sort by:</span>
           {[
-            { field: 'id',       label: 'Case Number' },
-            { field: 'priority', label: 'Priority'    },
-            { field: 'created',  label: 'Created Date' },
+            { field: 'id',       label: 'Case ID'   },
+            { field: 'priority', label: 'Priority'  },
+            { field: 'evidence', label: 'Evidence'  },
+            { field: 'findings', label: 'AI Findings'},
+            { field: 'risk',     label: 'Risk Score' },
           ].map(s => (
             <button
               key={s.field}
@@ -318,27 +349,15 @@ export default function Investigations() {
           <button
             className="inv-btn inv-btn--ghost"
             style={{ marginLeft: 'auto' }}
-            onClick={() => { setStatus('all'); setPriority('all'); setSearch(''); setSortField('created'); setSortDir('desc') }}
+            onClick={() => { setStatus('all'); setPriority('all'); setSearch(''); setSortField('id'); setSortDir('asc') }}
           >
             Reset
           </button>
         </div>
       )}
 
-      {/* ── Content View ── */}
-      {loading ? (
-        <LoadingView message="Loading authorized investigation cases from database..." />
-      ) : error ? (
-        <ErrorView error={error} onRetry={fetchCases} message="Database Connection Error" />
-      ) : cases.length === 0 ? (
-        <EmptyStateView
-          title="No investigation cases have been created."
-          message="Initialize an authorized investigation case or ingest evidence to begin analysis."
-          icon={FolderOpen}
-          actionText="Create Case"
-          onAction={() => setCreateModalOpen(true)}
-        />
-      ) : viewMode === 'table' ? (
+      {/* ═══════ TABLE VIEW ═══════ */}
+      {viewMode === 'table' && (
         <div className="inv-table-wrap">
           <table className="inv-table">
             <thead>
@@ -346,152 +365,406 @@ export default function Investigations() {
                 <th onClick={() => toggleSort('id')} className="inv-th-sortable">
                   Case ID <SortIcon field="id" />
                 </th>
-                <th>Case Title</th>
+                <th>Case Name</th>
+                <th>Type</th>
                 <th onClick={() => toggleSort('priority')} className="inv-th-sortable">
                   Priority <SortIcon field="priority" />
                 </th>
                 <th>Status</th>
-                <th>Lead Investigator</th>
-                <th>Created Date</th>
+                <th onClick={() => toggleSort('risk')} className="inv-th-sortable">
+                  Risk <SortIcon field="risk" />
+                </th>
+                <th onClick={() => toggleSort('evidence')} className="inv-th-sortable">
+                  Evidence <SortIcon field="evidence" />
+                </th>
+                <th onClick={() => toggleSort('findings')} className="inv-th-sortable">
+                  AI Findings <SortIcon field="findings" />
+                </th>
+                <th>Lead</th>
+                <th>Last Updated</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="inv-empty-row">
+                  <td colSpan={11} className="inv-empty-row">
                     <Search size={20} />
                     <span>No cases match your filters</span>
                   </td>
                 </tr>
-              ) : (
-                filtered.map((c) => (
-                  <tr
-                    key={c.id}
-                    className={`inv-row inv-row--${c.priority?.toLowerCase() || 'medium'}`}
-                    onClick={() => navigate(`/investigations/${c.id}`)}
-                  >
-                    <td>
-                      <span className="inv-row-id">{c.case_number || `CASE-${c.id}`}</span>
-                    </td>
-                    <td>
-                      <div className="inv-row-name-col">
-                        <span className="inv-row-name">{c.title}</span>
-                        {c.description && <span className="inv-row-desc">{c.description}</span>}
-                      </div>
-                    </td>
-                    <td><PriorityBadge level={c.priority} /></td>
-                    <td><StatusBadge status={c.status} /></td>
-                    <td>
-                      <span className="inv-row-lead">{c.creator_name || 'Assigned Analyst'}</span>
-                    </td>
-                    <td>
-                      <span className="inv-row-time">
-                        {c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}
-                      </span>
-                    </td>
-                    <td onClick={e => e.stopPropagation()}>
-                      <button
-                        className="inv-row-arrow"
-                        onClick={() => navigate(`/investigations/${c.id}`)}
-                        title="Open Case"
-                      >
-                        <ChevronRight size={15} />
-                      </button>
-                    </td>
-                  </tr>
-                ))
               )}
+              {filtered.map((c, idx) => (
+                <tr
+                  key={c.id}
+                  className={`inv-row inv-row--${c.priority} ${c.status === 'closed' ? 'inv-row--closed' : ''}`}
+                  onClick={() => navigate(`/investigations/${c.id}`)}
+                  id={`case-row-${c.id}`}
+                  style={{ animationDelay: `${idx * 40}ms` }}
+                >
+                  <td>
+                    <div className="inv-cell-id">
+                      <span className="inv-case-id">{c.id}</span>
+                      {c.tlp && <span className={`inv-tlp inv-tlp--${c.tlp.includes('RED') ? 'red' : c.tlp.includes('AMBER') ? 'amber' : 'green'}`}>{c.tlp}</span>}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="inv-cell-name">
+                      <span className="inv-case-name">{c.name}</span>
+                      <div className="inv-case-tags">
+                        {c.tags.slice(0, 2).map(t => (
+                          <span key={t} className="inv-tag">{t}</span>
+                        ))}
+                        {c.tags.length > 2 && <span className="inv-tag inv-tag--more">+{c.tags.length - 2}</span>}
+                      </div>
+                    </div>
+                  </td>
+                  <td><TypeChip type={c.type} /></td>
+                  <td><PriorityBadge level={c.priority} /></td>
+                  <td><StatusBadge status={c.status} /></td>
+                  <td>
+                    <div className="inv-risk-cell">
+                      <span className={`inv-risk-score inv-risk-score--${c.riskLabel.toLowerCase()}`}>{c.riskScore}</span>
+                      <RiskBar score={c.riskScore} />
+                    </div>
+                  </td>
+                  <td>
+                    <div className="inv-cell-count">
+                      <HardDrive size={12} />
+                      {c.evidenceCount.toLocaleString()}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="inv-cell-count inv-cell-count--cyan">
+                      <Brain size={12} />
+                      {c.aiFindings}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="inv-cell-lead">
+                      <div className="inv-lead-avatar">{c.lead.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
+                      <span>{c.lead}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="inv-cell-time">
+                      <Clock size={11} />
+                      {c.lastUpdated}
+                    </div>
+                  </td>
+                  <td>
+                    <ChevronRight size={14} className="inv-row-arrow" />
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-      ) : (
+      )}
+
+      {/* ═══════ CARD VIEW ═══════ */}
+      {viewMode === 'card' && (
         <div className="inv-card-grid">
-          {filtered.map((c) => (
+          {filtered.length === 0 && (
+            <div className="inv-empty-card">
+              <Search size={20} />
+              <span>No cases match your filters</span>
+            </div>
+          )}
+          {filtered.map((c, idx) => (
             <div
               key={c.id}
-              className="inv-card"
+              className={`inv-card inv-card--${c.priority}`}
               onClick={() => navigate(`/investigations/${c.id}`)}
+              id={`case-card-${c.id}`}
+              style={{ animationDelay: `${idx * 50}ms` }}
             >
+              {/* Card header */}
               <div className="inv-card-header">
-                <span className="inv-card-id">{c.case_number || `CASE-${c.id}`}</span>
-                <PriorityBadge level={c.priority} />
+                <div className="inv-card-id-row">
+                  <span className="inv-case-id">{c.id}</span>
+                  <StatusBadge status={c.status} />
+                </div>
+                <div className="inv-card-badges">
+                  <PriorityBadge level={c.priority} />
+                  {c.tlp && <span className={`inv-tlp inv-tlp--${c.tlp.includes('RED') ? 'red' : c.tlp.includes('AMBER') ? 'amber' : 'green'}`}>{c.tlp}</span>}
+                </div>
               </div>
-              <h3 className="inv-card-title">{c.title}</h3>
-              <p className="inv-card-desc">{c.description || 'No case description provided.'}</p>
+
+              <h3 className="inv-card-name">{c.name}</h3>
+              <p className="inv-card-desc">{c.description.slice(0, 100)}…</p>
+
+              {/* Type */}
+              <TypeChip type={c.type} />
+
+              {/* Risk bar */}
+              <div className="inv-card-risk">
+                <span className="inv-card-risk-label">Risk Score</span>
+                <span className={`inv-risk-score inv-risk-score--${c.riskLabel.toLowerCase()}`}>{c.riskScore}</span>
+              </div>
+              <RiskBar score={c.riskScore} />
+
+              {/* Stats row */}
+              <div className="inv-card-stats">
+                <div className="inv-card-stat">
+                  <HardDrive size={12} />
+                  <span>{c.evidenceCount.toLocaleString()}</span>
+                  <span className="inv-card-stat-lbl">Evidence</span>
+                </div>
+                <div className="inv-card-stat inv-card-stat--cyan">
+                  <Brain size={12} />
+                  <span>{c.aiFindings}</span>
+                  <span className="inv-card-stat-lbl">Findings</span>
+                </div>
+                <div className="inv-card-stat">
+                  <Users size={12} />
+                  <span>{c.team.length}</span>
+                  <span className="inv-card-stat-lbl">Analysts</span>
+                </div>
+              </div>
+
+              {/* Footer */}
               <div className="inv-card-footer">
-                <StatusBadge status={c.status} />
-                <span className="inv-card-date">
-                  {c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}
-                </span>
+                <div className="inv-cell-lead">
+                  <div className="inv-lead-avatar">{c.lead.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
+                  <span className="inv-cell-lead-name">{c.lead}</span>
+                </div>
+                <div className="inv-cell-time">
+                  <Clock size={11} />
+                  {c.lastUpdated}
+                </div>
               </div>
+
+              <div className="inv-card-arrow"><ChevronRight size={14} /></div>
             </div>
           ))}
         </div>
       )}
 
-      {/* ── Create Case Modal ── */}
-      {createModalOpen && (
-        <div className="inv-modal-overlay" onClick={() => setCreateModalOpen(false)}>
-          <div className="inv-modal" onClick={e => e.stopPropagation()}>
-            <div className="inv-modal-header">
-              <h2>Create New Investigation Case</h2>
-              <button className="inv-modal-close" onClick={() => setCreateModalOpen(false)}>
-                <X size={18} />
+      {/* ── New Case Creation Modal ── */}
+      {isCreateOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(5, 9, 17, 0.85)',
+          backdropFilter: 'blur(6px)',
+          zIndex: 10000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: '10px',
+            width: '100%',
+            maxWidth: '560px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FolderOpen size={16} style={{ color: 'var(--accent)' }} />
+                <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--text)', fontWeight: 600 }}>Create New Investigation</h3>
+              </div>
+              <button 
+                onClick={() => setIsCreateOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={16} />
               </button>
             </div>
-            <form onSubmit={handleCreateCase} className="inv-modal-form">
-              <div className="inv-form-group">
-                <label>Case Title *</label>
-                <input
+
+            <form onSubmit={handleCreateCase} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Investigation Title *
+                </label>
+                <input 
                   type="text"
                   required
-                  placeholder="e.g. Unauthorized Cloud Infiltration"
-                  value={newTitle}
-                  onChange={e => setNewTitle(e.target.value)}
+                  autoFocus
+                  placeholder="e.g. Operation Nightfall: Unauthorized USB Egress"
+                  value={newCaseData.name}
+                  onChange={e => setNewCaseData({ ...newCaseData, name: e.target.value })}
+                  style={{
+                    width: '100%',
+                    background: 'var(--surface-alt)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    color: 'var(--text)',
+                    fontSize: '13px'
+                  }}
                 />
               </div>
-              <div className="inv-form-group">
-                <label>Case Number (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="Auto-generated if left blank (e.g. CASE-2026-0042)"
-                  value={newCaseNumber}
-                  onChange={e => setNewCaseNumber(e.target.value)}
-                />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Incident Type
+                  </label>
+                  <select
+                    value={newCaseData.type}
+                    onChange={e => setNewCaseData({ ...newCaseData, type: e.target.value })}
+                    style={{
+                      width: '100%',
+                      background: 'var(--surface-alt)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      color: 'var(--text)',
+                      fontSize: '13px'
+                    }}
+                  >
+                    <option value="Data Exfiltration">Data Exfiltration</option>
+                    <option value="Unauthorized Access">Unauthorized Access</option>
+                    <option value="Financial Fraud">Financial Fraud</option>
+                    <option value="Ransomware">Ransomware</option>
+                    <option value="Supply Chain Attack">Supply Chain Attack</option>
+                    <option value="Phishing">Phishing</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Priority Level
+                  </label>
+                  <select
+                    value={newCaseData.priority}
+                    onChange={e => setNewCaseData({ ...newCaseData, priority: e.target.value })}
+                    style={{
+                      width: '100%',
+                      background: 'var(--surface-alt)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      color: 'var(--text)',
+                      fontSize: '13px'
+                    }}
+                  >
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </div>
               </div>
-              <div className="inv-form-group">
-                <label>Priority</label>
-                <select value={newPriority} onChange={e => setNewPriority(e.target.value)}>
-                  <option value="critical">Critical</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    TLP Protocol
+                  </label>
+                  <select
+                    value={newCaseData.tlp}
+                    onChange={e => setNewCaseData({ ...newCaseData, tlp: e.target.value })}
+                    style={{
+                      width: '100%',
+                      background: 'var(--surface-alt)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      color: 'var(--text)',
+                      fontSize: '13px'
+                    }}
+                  >
+                    <option value="TLP:RED">TLP:RED (Restricted)</option>
+                    <option value="TLP:AMBER">TLP:AMBER (Limited)</option>
+                    <option value="TLP:GREEN">TLP:GREEN (Community)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Lead Investigator
+                  </label>
+                  <input 
+                    type="text"
+                    value={newCaseData.lead}
+                    onChange={e => setNewCaseData({ ...newCaseData, lead: e.target.value })}
+                    style={{
+                      width: '100%',
+                      background: 'var(--surface-alt)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      color: 'var(--text)',
+                      fontSize: '13px'
+                    }}
+                  />
+                </div>
               </div>
-              <div className="inv-form-group">
-                <label>Description</label>
-                <textarea
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Scope & Synopsis
+                </label>
+                <textarea 
                   rows={3}
-                  placeholder="Background notes, incident scope, objectives..."
-                  value={newDescription}
-                  onChange={e => setNewDescription(e.target.value)}
+                  placeholder="Describe initial indicators of compromise, physical location or affected assets..."
+                  value={newCaseData.description}
+                  onChange={e => setNewCaseData({ ...newCaseData, description: e.target.value })}
+                  style={{
+                    width: '100%',
+                    background: 'var(--surface-alt)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    color: 'var(--text)',
+                    fontSize: '13px',
+                    resize: 'vertical'
+                  }}
                 />
               </div>
-              <div className="inv-modal-actions">
+
+              <div style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                marginTop: '10px',
+                paddingTop: '14px',
+                borderTop: '1px solid var(--border)'
+              }}>
                 <button
                   type="button"
-                  className="inv-btn inv-btn--ghost"
-                  onClick={() => setCreateModalOpen(false)}
+                  onClick={() => setIsCreateOpen(false)}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    padding: '8px 14px',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting || !newTitle.trim()}
-                  className="inv-btn inv-btn--primary"
+                  style={{
+                    background: 'var(--accent)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '8px 18px',
+                    color: '#0b1120',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
                 >
-                  {submitting ? 'Creating Case...' : 'Create Case'}
+                  <Plus size={14} /> Open Case
                 </button>
               </div>
             </form>

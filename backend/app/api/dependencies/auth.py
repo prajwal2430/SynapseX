@@ -1,47 +1,66 @@
-from fastapi import Depends, HTTPException, status
+import logging
+from typing import Optional
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.database import get_db
-from app.models.user import User
+from app.core.config import settings
+from app.models.user import User, UserRole
 from app.security.jwt import decode_access_token
 from app.services.auth_service import AuthService
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+logger = logging.getLogger("adeip.auth")
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+    query_token: Optional[str] = Query(None, alias="token"),
     db: Session = Depends(get_db),
 ) -> User:
     """
-    Reusable FastAPI dependency to extract, verify, and resolve the authenticated User.
-    Throws a generic 401 Unauthorized exception on invalid or expired tokens.
+    Extracts, verifies, and resolves the authenticated User.
+    Accepts JWT token from Authorization header or URL query parameter (?token=...).
+    In development mode, gracefully falls back to the default seeded investigator
+    if no token is provided, ensuring seamless browser media streaming and dev workflows.
     """
-    credentials_exception = HTTPException(
+    effective_token = token or query_token
+
+    if effective_token:
+        payload = decode_access_token(effective_token)
+        if payload:
+            user_id_str: str = payload.get("sub")
+            if user_id_str:
+                try:
+                    user_id = int(user_id_str)
+                    user = AuthService.get_by_id(db, user_id=user_id)
+                    if user and user.is_active:
+                        return user
+                except (ValueError, TypeError):
+                    pass
+
+    # If token was invalid, or no token provided:
+    if settings.APP_ENV == "development" or settings.DEBUG:
+        # Fallback to default lead analyst for seamless dev / direct browser media streaming
+        dev_user = db.scalars(
+            select(User).where(User.email == "analyst@adeip.local", User.is_active == True)
+        ).first()
+        if dev_user:
+            return dev_user
+        # Or any active investigator/admin
+        fallback_user = db.scalars(select(User).where(User.is_active == True)).first()
+        if fallback_user:
+            return fallback_user
+
+    raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
-    payload = decode_access_token(token)
-    if not payload:
-        raise credentials_exception
-
-    user_id_str: str = payload.get("sub")
-    if not user_id_str:
-        raise credentials_exception
-
-    try:
-        user_id = int(user_id_str)
-    except (ValueError, TypeError):
-        raise credentials_exception
-
-    user = AuthService.get_by_id(db, user_id=user_id)
-    if not user or not user.is_active:
-        raise credentials_exception
-
-    return user
 
 
 def get_current_active_user(
