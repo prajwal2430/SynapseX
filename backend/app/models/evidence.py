@@ -60,6 +60,11 @@ class Evidence(Base):
         nullable=True,
     )
 
+    # Agent & Storage Metadata
+    agent_type: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
+    file_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    storage_status: Mapped[str] = mapped_column(String(32), default="stored", nullable=False)
+
     uploaded_by: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="RESTRICT"),
@@ -71,10 +76,20 @@ class Evidence(Base):
         server_default=func.now(),
         nullable=False,
     )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        onupdate=func.now(),
+        nullable=True,
+    )
 
     # Relationships
     case = relationship("InvestigationCase", foreign_keys=[case_id], lazy="joined")
     uploader = relationship("User", foreign_keys=[uploaded_by], lazy="joined")
+
+    @property
+    def file_url(self) -> str:
+        """Returns standard file streaming endpoint URL."""
+        return f"/api/evidence/{self.id}/file"
 
     def __repr__(self) -> str:
         return f"<Evidence id={self.id} evidence_number={self.evidence_number} integrity={self.integrity_status}>"
