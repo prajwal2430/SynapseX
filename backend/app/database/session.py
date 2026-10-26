@@ -11,11 +11,36 @@ def _build_engine(db_url: str):
     """
     Constructs an appropriate SQLAlchemy engine depending on whether
     the database is SQLite or PostgreSQL.
+
+    SQLite optimizations applied:
+      - WAL journal mode: allows concurrent reads + one writer (no "database is locked")
+      - busy_timeout 5000ms: wait up to 5s before raising locked error
+      - synchronous=NORMAL: safe balance of durability vs speed
+      - check_same_thread=False: required for FastAPI thread-per-request model
     """
     if db_url.startswith("sqlite"):
+        def _sqlite_connect():
+            import sqlite3
+            conn = sqlite3.connect(
+                db_url.replace("sqlite:///", "", 1),
+                check_same_thread=False,
+                timeout=5,
+            )
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout=5000;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn.execute("PRAGMA cache_size=-64000;")   # 64 MB page cache
+            conn.execute("PRAGMA temp_store=MEMORY;")
+            return conn
+
         return create_engine(
             db_url,
+            creator=_sqlite_connect,
             connect_args={"check_same_thread": False},
+            pool_size=5,
+            max_overflow=10,
+            pool_timeout=10,
+            pool_pre_ping=True,
             echo=settings.DEBUG and settings.APP_ENV == "development",
         )
     return create_engine(
