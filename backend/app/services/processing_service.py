@@ -36,18 +36,28 @@ from app.services.custody_service import CustodyService
 logger = logging.getLogger("adeip.processing")
 
 
+from app.processing.doc_parser import DocParser
+
 # Extension → Parser class registry
-# Add new parsers here — no changes needed elsewhere
 _PARSER_REGISTRY: dict[str, Type[BaseParser]] = {
     ".csv":  CSVParser,
     ".json": JSONParser,
-    ".txt":  TXTParser,
+    ".txt":  DocParser,
+    ".pdf":  DocParser,
+    ".docx": DocParser,
+    ".doc":  DocParser,
+    ".rtf":  DocParser,
     ".evtx": EVTXParser,
     ".jpg":  MediaParser,
     ".jpeg": MediaParser,
     ".png":  MediaParser,
+    ".webp": MediaParser,
     ".mp4":  MediaParser,
-    ".pdf":  MediaParser,
+    ".mov":  MediaParser,
+    ".mkv":  MediaParser,
+    ".mp3":  MediaParser,
+    ".wav":  MediaParser,
+    ".m4a":  MediaParser,
 }
 
 
@@ -155,11 +165,18 @@ class ProcessingService:
         # 7. Persist InvestigationEvent rows
         saved_count = 0
         if parsed_events and not error_message:
+            # Clean up any existing events and entities for this evidence item (reprocessing safety)
+            from sqlalchemy import delete
+            from app.models.entity import ExtractedEntityModel
+            db.execute(delete(InvestigationEvent).where(InvestigationEvent.evidence_id == evidence.id))
+            db.execute(delete(ExtractedEntityModel).where(ExtractedEntityModel.evidence_id == evidence.id))
+            db.flush()
+
             for pe in parsed_events:
                 try:
                     event_type_val = EventType(pe.event_type)
                 except ValueError:
-                    event_type_val = EventType.GENERIC
+                    event_type_val = EventType.OTHER
 
                 ie = InvestigationEvent(
                     case_id=evidence.case_id,
@@ -174,6 +191,13 @@ class ProcessingService:
                 db.add(ie)
                 saved_count += 1
             db.flush()
+
+            # Automatically extract structured entities from newly created events and metadata
+            try:
+                from app.services.entity_service import EntityService
+                EntityService.extract_entities_from_evidence(db=db, evidence_id=evidence.id, flush=True)
+            except Exception as ent_exc:
+                logger.warning(f"Entity extraction warning for Evidence #{evidence.id}: {ent_exc}")
 
         # 8. Update evidence processing status
         if error_message:

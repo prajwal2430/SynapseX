@@ -267,7 +267,22 @@ class EvidenceService:
                 except Exception as task_err:
                     logger.warning(f"Could not enqueue background task: {task_err}")
             else:
-                logger.info(f"Redis offline: ProcessingJob #{job.id} saved as QUEUED for Evidence #{evidence_record.id}")
+                logger.info(f"Redis offline: running direct processing pipeline for Evidence #{evidence_record.id}")
+                try:
+                    from app.services.processing_service import ProcessingService
+                    proc_res = ProcessingService.process_evidence(
+                        db=db,
+                        evidence_id=evidence_record.id,
+                        current_user=current_user,
+                        client_ip=client_ip,
+                    )
+                    job.status = JobStatus.COMPLETED
+                    job.events_extracted = proc_res.events_extracted
+                    job.completed_at = datetime.now(timezone.utc)
+                    db.commit()
+                    db.refresh(evidence_record)
+                except Exception as proc_err:
+                    logger.warning(f"Synchronous processing note for Evidence #{evidence_record.id}: {proc_err}")
 
             try:
                 from app.core.websocket import InvestigationWebSocketEvent, broadcast_case_event
@@ -542,3 +557,46 @@ class EvidenceService:
             verifier_name=verifier_name,
             message=message,
         )
+
+    @classmethod
+    def reprocess_evidence(
+        cls,
+        db: Session,
+        evidence_id: int,
+        current_user: User,
+        client_ip: Optional[str] = None,
+    ) -> EvidenceResponse:
+        """
+        Reprocesses an existing evidence artifact without duplicating the original physical file or altering its ID.
+        Re-extracts events and entities.
+        """
+        evidence = db.scalars(select(Evidence).where(Evidence.id == evidence_id)).first()
+        if not evidence:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Evidence artifact #{evidence_id} not found.",
+            )
+
+        from app.services.processing_service import ProcessingService
+        from app.services.custody_service import CustodyService
+        from app.models.custody import CustodyAction
+
+        # Record custody reprocessing log
+        CustodyService.record_event(
+            db=db,
+            evidence_id=evidence.id,
+            action=CustodyAction.PROCESSING_STARTED,
+            actor_id=current_user.id,
+            details={"action": "reprocess", "reason": "Investigator triggered evidence reprocessing"},
+            flush=True,
+        )
+
+        ProcessingService.process_evidence(
+            db=db,
+            evidence_id=evidence.id,
+            current_user=current_user,
+            client_ip=client_ip,
+        )
+
+        db.refresh(evidence)
+        return cls._to_evidence_response(evidence)

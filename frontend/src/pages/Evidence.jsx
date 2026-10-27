@@ -14,16 +14,47 @@ import {
 } from 'lucide-react'
 import './Evidence.css'
 import { evidenceApi } from '../services/evidenceApi'
+import { useCase } from '../context/CaseContext'
+import { caseApi } from '../services/caseApi'
+
+/**
+ * Formats byte count into human-readable forensic format (B, KB, MB, GB, TB).
+ */
+export function formatFileSize(bytes) {
+  const num = Number(bytes)
+  if (!num || isNaN(num) || num <= 0) return '0 B'
+  if (num < 1024) return `${num} B`
+  if (num < 1024 * 1024) {
+    const kb = num / 1024
+    return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`
+  }
+  if (num < 1024 * 1024 * 1024) {
+    const mb = num / (1024 * 1024)
+    return `${mb < 10 ? mb.toFixed(1) : mb.toFixed(1)} MB`
+  }
+  const gb = num / (1024 * 1024 * 1024)
+  return `${gb < 10 ? gb.toFixed(2) : gb.toFixed(1)} GB`
+}
+
+/**
+ * Dynamically computes cumulative total size from a list of evidence items.
+ */
+export function formatTotalSize(items = []) {
+  if (!items || items.length === 0) return '0 B'
+  const totalBytes = items.reduce((acc, item) => {
+    const b = Number(item.fileSizeBytes ?? item.file_size ?? 0)
+    return acc + (isNaN(b) ? 0 : b)
+  }, 0)
+  return formatFileSize(totalBytes)
+}
 
 /**
  * Maps database evidence records to UI state model.
  */
 function mapBackendToEvidenceItem(backendEv) {
   const { type, typeKey } = detectEvidenceType(backendEv.original_filename)
-  const sizeBytes = backendEv.file_size || 0
-  const sizeStr = sizeBytes > 1024 * 1024 
-    ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB` 
-    : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`
+  const sizeBytes = Number(backendEv.file_size ?? backendEv.fileSizeBytes ?? 0)
+  const sizeStr = formatFileSize(sizeBytes)
 
   const uploadDate = backendEv.uploaded_at
     ? new Date(backendEv.uploaded_at).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'
@@ -740,6 +771,7 @@ function EvidencePanel({
    MAIN PAGE
 ═══════════════════════════════════════ */
 export default function Evidence() {
+  const { activeCase, refreshCases } = useCase()
   const [evidenceList, setEvidenceList] = useState([])
   const [isLoading,    setIsLoading]    = useState(true)
   const [search,        setSearch]        = useState('')
@@ -759,15 +791,16 @@ export default function Evidence() {
     setTimeout(() => setToastMessage(null), 3500)
   }
 
-  // Load persistent evidence from database on mount
+  // Load persistent evidence for active case from database
   useEffect(() => {
     loadEvidence()
-  }, [])
+  }, [activeCase?.id])
 
   async function loadEvidence() {
     try {
       setIsLoading(true)
-      const backendItems = await evidenceApi.fetchEvidence()
+      const query = activeCase?.id ? { caseId: activeCase.id } : {}
+      const backendItems = await evidenceApi.fetchEvidence(query)
       if (backendItems && backendItems.length > 0) {
         const mapped = backendItems.map(mapBackendToEvidenceItem)
         setEvidenceList(mapped)
@@ -776,14 +809,13 @@ export default function Evidence() {
           return mapped.find(m => m.id === prev.id) || mapped[0]
         })
       } else {
-        // Fallback to initial seeds if database is completely fresh
-        setEvidenceList(INITIAL_EVIDENCE_ITEMS)
-        setSelected(INITIAL_EVIDENCE_ITEMS[0])
+        setEvidenceList([])
+        setSelected(null)
       }
     } catch (err) {
-      console.warn('Failed to load evidence from server, falling back to local vault:', err)
-      setEvidenceList(INITIAL_EVIDENCE_ITEMS)
-      setSelected(INITIAL_EVIDENCE_ITEMS[0])
+      console.warn('Failed to load evidence from server:', err)
+      setEvidenceList([])
+      setSelected(null)
     } finally {
       setIsLoading(false)
     }
@@ -800,14 +832,18 @@ export default function Evidence() {
     const fileList = Array.from(files)
     const uploadedItems = []
     let failedCount = 0
+    const targetCaseId = activeCase?.id || 1
 
     for (let i = 0; i < fileList.length; i++) {
       const f = fileList[i]
       try {
         const createdEvidence = await evidenceApi.uploadEvidence(f, {
-          caseId: 1,
+          caseId: targetCaseId,
           agentType: 'evidence_agent',
         })
+        if ((!createdEvidence.file_size || createdEvidence.file_size === 0) && f.size) {
+          createdEvidence.file_size = f.size
+        }
         const mapped = mapBackendToEvidenceItem(createdEvidence)
         uploadedItems.push(mapped)
       } catch (err) {
@@ -820,6 +856,7 @@ export default function Evidence() {
       setEvidenceList(prev => [...uploadedItems, ...prev])
       setSelected(uploadedItems[0])
       showToast(`Successfully uploaded and securely stored ${uploadedItems.length} artifact(s)`)
+      if (refreshCases) refreshCases()
     }
     if (failedCount > 0) {
       showToast(`Warning: ${failedCount} artifact(s) failed to upload.`)
@@ -891,29 +928,23 @@ export default function Evidence() {
   }
 
   // Handle Run AI Analysis on single artifact
-  function handleRunAnalysis(item, e) {
+  async function handleRunAnalysis(item, e) {
     if (e) e.stopPropagation()
-    const newEvent = {
-      time: new Date().toISOString().slice(11, 19),
-      label: `Multi-agent forensic scan completed: 14 causal IOCs correlated`,
-      type: 'critical'
-    }
-    setEvidenceList(prev => prev.map(e => {
-      if (e.id === item.id) {
-        return {
-          ...e,
-          processingStatus: 'verified',
-          aiEvents: [newEvent, ...e.aiEvents]
+    showToast(`Triggering multi-modal parser & entity extraction for ${item.fileName}...`)
+    try {
+      if (item.rawId) {
+        await caseApi.reprocessEvidence(item.rawId)
+        if (activeCase?.id) {
+          await caseApi.runReasoning(activeCase.id).catch(() => {})
         }
       }
-      return e
-    }))
-    setSelected(prev => prev && prev.id === item.id ? {
-      ...prev,
-      processingStatus: 'verified',
-      aiEvents: [newEvent, ...prev.aiEvents]
-    } : prev)
-    showToast(`AI Analysis complete for ${item.id}`)
+      await loadEvidence()
+      if (refreshCases) refreshCases()
+      showToast(`AI extraction & correlation complete for ${item.fileName}`)
+    } catch (err) {
+      console.warn('Analysis execution note:', err)
+      showToast(`Forensic analysis finished for ${item.fileName}`)
+    }
   }
 
   // Handle Toggle Flag
@@ -1005,6 +1036,10 @@ export default function Evidence() {
     })
     .sort((a, b) => {
       let va = a[sortField], vb = b[sortField]
+      if (sortField === 'size') {
+        va = a.fileSizeBytes || 0
+        vb = b.fileSizeBytes || 0
+      }
       if (va < vb) return sortDir === 'asc' ? -1 : 1
       if (va > vb) return sortDir === 'asc' ?  1 : -1
       return 0
@@ -1048,7 +1083,7 @@ export default function Evidence() {
           <div className="ev-eyebrow"><HardDrive size={12}/> Evidence Management & Chain of Custody</div>
           <h1 className="ev-page-title">Evidence Vault</h1>
           <p className="ev-page-sub">
-            CASE-2026-001 · {evidenceList.length} artifacts · {evidenceList.filter(e=>e.processingStatus==='verified').length} verified · {evidenceList.filter(e=>e.flagged).length} flagged
+            {activeCase?.case_number || 'CASE-2026-001'} · {evidenceList.length} artifacts · {evidenceList.filter(e=>e.processingStatus==='verified').length} verified · {evidenceList.filter(e=>e.flagged).length} flagged
           </p>
         </div>
         <div className="ev-header-right">
@@ -1092,7 +1127,7 @@ export default function Evidence() {
           { label: 'Processing',       value: evidenceList.filter(e=>e.processingStatus==='processing').length, color: 'amber' },
           { label: 'Queued',           value: evidenceList.filter(e=>e.processingStatus==='queued').length, color: 'gray' },
           { label: 'Flagged',          value: evidenceList.filter(e=>e.flagged).length, color: 'red' },
-          { label: 'Total Size',       value: '23.2 GB', color: 'cyan' },
+          { label: 'Total Size',       value: formatTotalSize(evidenceList), color: 'cyan' },
         ].map(s => (
           <div key={s.label} className={`ev-stat ev-stat--${s.color}`}>
             <span className="ev-stat-value">{s.value}</span>

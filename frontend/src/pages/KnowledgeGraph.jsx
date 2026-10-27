@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Share2, User, Monitor, Key, Usb, Globe,
   FileText, Cloud, MapPin, Search, Filter,
@@ -8,6 +9,8 @@ import {
   Eye, RefreshCw, SlidersHorizontal, Info,
   Network, Lock, ChevronRight, Zap, Download
 } from 'lucide-react'
+import { useCase } from '../context/CaseContext'
+import { caseApi } from '../services/caseApi'
 import './KnowledgeGraph.css'
 
 /* ═══════════════════════════════════════════════════
@@ -193,9 +196,11 @@ const ENTITY_TYPES = [
 ]
 
 export default function KnowledgeGraph() {
-  const [nodes, setNodes] = useState(INITIAL_NODES)
-  const [edges, setEdges] = useState(INITIAL_EDGES)
-  const [selectedNode, setSelectedNode] = useState(INITIAL_NODES[3]) // Default: LAPTOP-07
+  const navigate = useNavigate()
+  const { activeCase } = useCase()
+  const [nodes, setNodes] = useState([])
+  const [edges, setEdges] = useState([])
+  const [selectedNode, setSelectedNode] = useState(null)
   const [typeFilter, setTypeFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [riskFilter, setRiskFilter] = useState('all') // all | critical | high
@@ -204,8 +209,86 @@ export default function KnowledgeGraph() {
   const [isDraggingCanvas, setIsDraggingCanvas] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [draggingNodeId, setDraggingNodeId] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
 
   const svgRef = useRef(null)
+
+  useEffect(() => {
+    if (!activeCase?.id) return
+    let isMounted = true
+    setIsLoading(true)
+    Promise.allSettled([
+      caseApi.getEntities(activeCase.id),
+      caseApi.getCorrelations(activeCase.id),
+    ]).then(([enRes, corrRes]) => {
+      if (!isMounted) return
+      let entities = []
+      if (enRes.status === 'fulfilled') {
+        entities = enRes.value?.items || (Array.isArray(enRes.value) ? enRes.value : [])
+      }
+
+      if (entities.length > 0) {
+        const nList = entities.map((en, idx) => {
+          const angle = (idx / Math.max(entities.length, 1)) * 2 * Math.PI
+          const radius = 220
+          const cx = 450 + radius * Math.cos(angle)
+          const cy = 300 + radius * Math.sin(angle)
+
+          let icon = Key
+          const t = (en.entity_type || '').toLowerCase()
+          if (t.includes('person') || t.includes('user')) icon = User
+          else if (t.includes('ip') || t.includes('network') || t.includes('url')) icon = Globe
+          else if (t.includes('device') || t.includes('host')) icon = Monitor
+          else if (t.includes('file')) icon = FileText
+
+          return {
+            id: `node-${en.id || idx}`,
+            rawId: en.id,
+            label: en.entity_value,
+            type: en.entity_type || 'Entity',
+            typeKey: t.slice(0, 6),
+            icon,
+            x: Math.round(cx),
+            y: Math.round(cy),
+            risk: 'high',
+            riskScore: 75,
+            details: `Extracted from evidence #${en.source_evidence_id} (${en.source_field || 'content'}). Status: ${en.resolution_status || 'resolved'}.`,
+            evidence: [`Evidence Artifact #${en.source_evidence_id}`],
+            timeline: []
+          }
+        })
+
+        const eList = []
+        for (let i = 0; i < nList.length; i++) {
+          for (let j = i + 1; j < nList.length; j++) {
+            if (entities[i].source_evidence_id === entities[j].source_evidence_id) {
+              eList.push({
+                id: `edge-${i}-${j}`,
+                from: nList[i].id,
+                to: nList[j].id,
+                label: 'Co-Occurs In Evidence',
+                type: 'direct',
+                risk: 'medium'
+              })
+            }
+          }
+        }
+        setNodes(nList)
+        setEdges(eList)
+        setSelectedNode(nList[0])
+      } else {
+        setNodes([])
+        setEdges([])
+        setSelectedNode(null)
+      }
+      setIsLoading(false)
+    }).catch(err => {
+      console.warn('Failed to load knowledge graph:', err)
+      if (isMounted) setIsLoading(false)
+    })
+
+    return () => { isMounted = false }
+  }, [activeCase?.id])
 
   // Filtered nodes
   const filteredNodes = useMemo(() => {
@@ -466,6 +549,37 @@ export default function KnowledgeGraph() {
               <span className="leg-item"><span className="leg-dot" style={{ background: '#6366f1' }} /> Location</span>
             </div>
           </div>
+
+          {/* Empty State Overlay */}
+          {nodes.length === 0 && !isLoading && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center',
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              padding: '32px 24px',
+              zIndex: 10,
+              maxWidth: '420px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+            }}>
+              <Share2 size={36} style={{ margin: '0 auto 12px', color: 'var(--accent)', opacity: 0.8 }} />
+              <h3 style={{ fontSize: '15px', color: 'var(--text)', marginBottom: '8px' }}>No Extracted Entities In Case</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '16px', lineHeight: 1.5 }}>
+                Upload forensic files (documents, logs, media, or packet captures) in the Evidence Vault to run automated entity extraction and map relational links.
+              </p>
+              <button
+                className="inv-btn inv-btn--primary"
+                onClick={() => navigate('/evidence')}
+                style={{ margin: '0 auto', fontSize: '12px', padding: '6px 16px' }}
+              >
+                Go to Evidence Vault
+              </button>
+            </div>
+          )}
 
           {/* SVG Network Graph */}
           <svg

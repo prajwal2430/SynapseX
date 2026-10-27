@@ -57,6 +57,8 @@ class FindingService:
         alts = json.loads(model.alternative_explanations) if model.alternative_explanations else []
         recs = json.loads(model.recommended_verification) if model.recommended_verification else []
         lims = json.loads(model.limitations) if model.limitations else []
+        classification_val = getattr(model, "classification", "INFERENCE") or "INFERENCE"
+        related_entities_val = json.loads(model.related_entities) if getattr(model, "related_entities", None) else []
 
         return FindingResponse(
             id=model.id,
@@ -64,6 +66,8 @@ class FindingService:
             case_id=model.case_id,
             title=model.title,
             category=model.category,
+            classification=classification_val,
+            related_entities=related_entities_val,
             confidence_score=model.confidence_score,
             summary=model.summary,
             observations=obs,
@@ -172,16 +176,29 @@ class FindingService:
         reasoning_data = reasoning_res.get("reasoning_output", {})
         raw_findings = reasoning_res.get("findings", [])
 
-        # 4. Persist findings to database
+        # 4. Persist findings to database (clean up older pending findings on new reasoning run)
+        from sqlalchemy import delete
+        db.execute(
+            delete(InvestigationFindingModel).where(
+                InvestigationFindingModel.case_id == case_id,
+                InvestigationFindingModel.review_status == FindingReviewStatus.PENDING_REVIEW,
+            )
+        )
+        db.flush()
+
         new_models_saved: List[InvestigationFindingModel] = []
         for idx, item in enumerate(raw_findings, start=1):
             fnd_id = item.get("finding_id") or f"FND-{case_id}-{uuid.uuid4().hex[:6].upper()}"
+            cls_val = item.get("classification", "INFERENCE")
+            rel_ents_val = item.get("related_entities", [])
 
             finding_model = InvestigationFindingModel(
                 finding_id=fnd_id,
                 case_id=case_id,
                 title=item.get("title", f"Investigative Lead #{idx}"),
                 category=item.get("category", "reasoning_lead"),
+                classification=cls_val,
+                related_entities=json.dumps(rel_ents_val) if rel_ents_val else None,
                 confidence_score=item.get("confidence", 0.85),
                 summary=item.get("description") or reasoning_data.get("summary", ""),
                 observations=json.dumps(reasoning_data.get("observations", [])),

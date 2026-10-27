@@ -1,3 +1,4 @@
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FolderOpen, HardDrive, Brain,
@@ -8,6 +9,7 @@ import {
   ChevronRight, Eye, MessageSquare,
 } from 'lucide-react'
 import { getCaseById } from '../data/cases'
+import { useCase } from '../context/CaseContext'
 import './CaseDetail.css'
 
 const SOURCE_ICONS = {
@@ -34,8 +36,39 @@ function TimelineDot({ type }) {
 export default function CaseDetail() {
   const { caseId } = useParams()
   const navigate = useNavigate()
+  const { cases, selectCase } = useCase()
   const [toastMsg, setToastMsg] = useState(null)
-  const c = getCaseById(caseId)
+
+  const foundLive = (cases || []).find(x => x.case_id === caseId || String(x.id) === String(caseId))
+  const staticCase = getCaseById(caseId)
+
+  const c = useMemo(() => {
+    if (foundLive) {
+      return {
+        id: foundLive.case_id || `CASE-2026-${String(foundLive.id).padStart(3, '0')}`,
+        rawId: foundLive.id,
+        name: foundLive.title,
+        type: foundLive.case_type || 'Data Exfiltration',
+        status: foundLive.status?.toLowerCase() || 'active',
+        priority: foundLive.priority?.toLowerCase() || 'medium',
+        tlp: 'TLP:AMBER',
+        classification: 'CONFIDENTIAL',
+        lead: 'Lead Forensic Investigator',
+        openedDate: foundLive.opened_date ? new Date(foundLive.opened_date).toISOString().slice(0, 10) : new Date(foundLive.created_at).toISOString().slice(0, 10),
+        lastUpdatedFull: foundLive.updated_at ? new Date(foundLive.updated_at).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'Just now',
+        evidenceCount: foundLive.evidence_count || 0,
+        aiFindings: foundLive.finding_count || 0,
+        riskScore: foundLive.priority === 'critical' ? 92 : foundLive.priority === 'high' ? 76 : foundLive.priority === 'medium' ? 52 : 25,
+        riskLabel: foundLive.priority === 'critical' ? 'Critical' : foundLive.priority === 'high' ? 'High' : foundLive.priority === 'medium' ? 'Medium' : 'Low',
+        tags: ['Forensic', foundLive.case_type || 'General'],
+        team: ['Lead Forensic Investigator'],
+        description: foundLive.description || 'Active investigation case.',
+        timeline: [],
+        raw: foundLive
+      }
+    }
+    return staticCase
+  }, [foundLive, staticCase])
 
   if (!c) {
     return (

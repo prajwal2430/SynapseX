@@ -89,6 +89,39 @@ async def list_case_evidence(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @evidence_router.post(
+    "",
+    response_model=EvidenceResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Direct evidence upload endpoint",
+)
+async def upload_evidence_direct(
+    request: Request,
+    file: UploadFile = File(..., description="Forensic evidence file"),
+    case_id: Optional[int] = Query(None, description="Case ID via query"),
+    case_id_form: Optional[int] = Form(None, alias="case_id", description="Case ID via form"),
+    agent_type: Optional[str] = Query(None),
+    agent_type_form: Optional[str] = Form(None, alias="agent_type"),
+    file_type: Optional[str] = Query(None),
+    file_type_form: Optional[str] = Form(None, alias="file_type"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    client_ip = request.client.host if request.client else None
+    resolved_case_id = case_id if case_id is not None else (case_id_form if case_id_form is not None else 1)
+    resolved_agent = agent_type or agent_type_form
+    resolved_file_type = file_type or file_type_form
+    return await EvidenceService.upload_evidence(
+        db=db,
+        case_id=resolved_case_id,
+        file=file,
+        current_user=current_user,
+        agent_type=resolved_agent,
+        file_type=resolved_file_type,
+        client_ip=client_ip,
+    )
+
+
+@evidence_router.post(
     "/upload",
     response_model=EvidenceUploadResponse,
     status_code=status.HTTP_201_CREATED,
@@ -283,4 +316,29 @@ async def get_chain_of_custody(
         db=db,
         evidence_id=evidence_id,
         current_user=current_user,
+    )
+
+
+@evidence_router.post(
+    "/{evidence_id}/reprocess",
+    response_model=EvidenceResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Reprocess evidence artifact without duplicating file or changing ID",
+)
+async def reprocess_evidence(
+    evidence_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Reruns the parser and entity extraction pipeline on an existing evidence artifact.
+    Preserves evidence ID and physical file location while updating events and entities.
+    """
+    client_ip = request.client.host if request.client else None
+    return EvidenceService.reprocess_evidence(
+        db=db,
+        evidence_id=evidence_id,
+        current_user=current_user,
+        client_ip=client_ip,
     )
