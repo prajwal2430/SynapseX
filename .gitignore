@@ -67,3 +67,9 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Local-only utility scripts & generated documents (do not push)
+generate_viva_pdf.py
+*_Viva_Preparation_Master_Guide.pdf
+*_Implementation_Plan*.pdf
+*_Plan*.pdf
