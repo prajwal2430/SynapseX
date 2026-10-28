@@ -27,6 +27,7 @@ router = APIRouter(prefix="/cases", tags=["Investigation Knowledge Graph"])
 )
 def get_case_knowledge_graph(
     case_id: int,
+    max_nodes: Optional[int] = Query(250, ge=10, le=2000, description="Max entities to include for interactive visualizers"),
     sync_neo4j: bool = Query(False, description="Optionally trigger background synchronization to Neo4j database"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -43,6 +44,7 @@ def get_case_knowledge_graph(
         db=db,
         case_id=case_id,
         sync_to_neo4j=sync_neo4j,
+        max_nodes=max_nodes,
     )
 
 

@@ -3,6 +3,7 @@ from app.models.audit import AuditEvent
 from app.models.case import CasePriority, CaseStatus, InvestigationCase
 from app.models.correlation import CorrelationSignalType, InvestigationCorrelation
 from app.models.custody import ChainOfCustody, CustodyAction
+from app.models.data_source import DataSource, SourceStatus, SourceType
 from app.models.entity import EntityType, ExtractedEntityModel, ExtractionMethod
 from app.models.evidence import Evidence, IntegrityStatus, ProcessingStatus
 from app.models.finding import FindingReviewStatus, InvestigationFindingModel
@@ -27,6 +28,9 @@ __all__ = [
     "AuditEvent",
     "ChainOfCustody",
     "CustodyAction",
+    "DataSource",
+    "SourceType",
+    "SourceStatus",
     "InvestigationEvent",
     "EventType",
     "ProcessingJob",

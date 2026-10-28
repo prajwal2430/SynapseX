@@ -771,7 +771,7 @@ function EvidencePanel({
    MAIN PAGE
 ═══════════════════════════════════════ */
 export default function Evidence() {
-  const { activeCase, refreshCases } = useCase()
+  const { cases, activeCase, selectCase, refreshCases } = useCase()
   const [evidenceList, setEvidenceList] = useState([])
   const [isLoading,    setIsLoading]    = useState(true)
   const [search,        setSearch]        = useState('')
@@ -780,16 +780,23 @@ export default function Evidence() {
   const [selectedItem,  setSelected]     = useState(null)
   const [sortField,     setSortField]    = useState('id')
   const [sortDir,       setSortDir]      = useState('asc')
-  const [toastMessage,  setToastMessage] = useState(null)
+  const [toast,         setToast]        = useState(null)
   const [deleteTarget,  setDeleteTarget] = useState(null)
   const [isDeleting,    setIsDeleting]   = useState(false)
 
   const headerFileInputRef = useRef(null)
 
-  function showToast(msg) {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3500)
+  function showToast(msg, type = 'success') {
+    setToast({ message: msg, type })
+    setTimeout(() => setToast(null), 4500)
   }
+
+  // Ensure an active case is selected if available
+  useEffect(() => {
+    if (!activeCase && cases && cases.length > 0) {
+      selectCase(cases[0])
+    }
+  }, [activeCase, cases, selectCase])
 
   // Load persistent evidence for active case from database
   useEffect(() => {
@@ -832,7 +839,8 @@ export default function Evidence() {
     const fileList = Array.from(files)
     const uploadedItems = []
     let failedCount = 0
-    const targetCaseId = activeCase?.id || 1
+    const errors = []
+    const targetCaseId = activeCase?.id || (cases && cases.length > 0 ? cases[0].id : null)
 
     for (let i = 0; i < fileList.length; i++) {
       const f = fileList[i]
@@ -849,17 +857,19 @@ export default function Evidence() {
       } catch (err) {
         console.error('Failed to upload file:', f.name, err)
         failedCount++
+        errors.push(`${f.name}: ${err.message || 'Upload failed'}`)
       }
     }
 
     if (uploadedItems.length > 0) {
       setEvidenceList(prev => [...uploadedItems, ...prev])
       setSelected(uploadedItems[0])
-      showToast(`Successfully uploaded and securely stored ${uploadedItems.length} artifact(s)`)
+      showToast(`Successfully uploaded and securely stored ${uploadedItems.length} artifact(s)`, 'success')
       if (refreshCases) refreshCases()
     }
     if (failedCount > 0) {
-      showToast(`Warning: ${failedCount} artifact(s) failed to upload.`)
+      const detailMsg = errors.slice(0, 2).join(' | ')
+      showToast(`Upload failed (${failedCount} file${failedCount > 1 ? 's' : ''}): ${detailMsg}`, 'error')
     }
   }
 
@@ -1054,13 +1064,13 @@ export default function Evidence() {
     <div className={`ev-root ${selectedItem ? 'ev-root--panel-open' : ''}`}>
 
       {/* Toast notification */}
-      {toastMessage && (
+      {toast && (
         <div style={{
           position: 'fixed',
           bottom: '24px',
           right: '24px',
           background: 'var(--surface)',
-          border: '1px solid var(--accent)',
+          border: `1px solid ${toast.type === 'error' ? 'var(--alert-critical, #ef4444)' : toast.type === 'warning' ? '#f59e0b' : 'var(--accent, #10b981)'}`,
           borderRadius: '6px',
           padding: '10px 16px',
           color: 'var(--text)',
@@ -1070,10 +1080,15 @@ export default function Evidence() {
           zIndex: 9999,
           display: 'flex',
           alignItems: 'center',
-          gap: '8px'
+          gap: '8px',
+          maxWidth: '460px',
         }}>
-          <CheckCircle2 size={14} style={{ color: 'var(--accent)' }} />
-          <span>{toastMessage}</span>
+          {toast.type === 'error' || toast.type === 'warning' ? (
+            <AlertTriangle size={15} style={{ color: toast.type === 'error' ? '#ef4444' : '#f59e0b', flexShrink: 0 }} />
+          ) : (
+            <CheckCircle2 size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
 
@@ -1083,7 +1098,7 @@ export default function Evidence() {
           <div className="ev-eyebrow"><HardDrive size={12}/> Evidence Management & Chain of Custody</div>
           <h1 className="ev-page-title">Evidence Vault</h1>
           <p className="ev-page-sub">
-            {activeCase?.case_number || 'CASE-2026-001'} · {evidenceList.length} artifacts · {evidenceList.filter(e=>e.processingStatus==='verified').length} verified · {evidenceList.filter(e=>e.flagged).length} flagged
+            {activeCase ? `${activeCase.case_number} · ${activeCase.title}` : 'No active case selected'} · {evidenceList.length} artifacts · {evidenceList.filter(e=>e.processingStatus==='verified').length} verified · {evidenceList.filter(e=>e.flagged).length} flagged
           </p>
         </div>
         <div className="ev-header-right">

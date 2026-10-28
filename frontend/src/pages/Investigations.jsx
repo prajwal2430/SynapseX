@@ -159,8 +159,9 @@ export default function Investigations() {
 
   const casesList = useMemo(() => {
     return (cases || []).map(c => ({
-      id: c.case_id || `CASE-2026-${String(c.id).padStart(3, '0')}`,
+      id: c.case_number || c.case_id || `CASE-2026-${String(c.id).padStart(3, '0')}`,
       rawId: c.id,
+      caseNumber: c.case_number,
       name: c.title || 'Untitled Case',
       type: c.case_type || 'Data Exfiltration',
       status: c.status?.toLowerCase() || 'active',

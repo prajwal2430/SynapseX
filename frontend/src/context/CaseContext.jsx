@@ -43,7 +43,11 @@ export function CaseProvider({ children }) {
     if (!caseObjOrId) return
     let target = caseObjOrId
     if (typeof caseObjOrId === 'number' || typeof caseObjOrId === 'string') {
-      target = cases.find(c => String(c.id) === String(caseObjOrId)) || null
+      target = cases.find(c =>
+        String(c.id) === String(caseObjOrId) ||
+        c.case_number === String(caseObjOrId) ||
+        c.case_id === String(caseObjOrId)
+      ) || null
     }
     if (target) {
       setActiveCase(target)
@@ -59,6 +63,11 @@ export function CaseProvider({ children }) {
 
   const deleteCase = async (caseId) => {
     await caseApi.deleteCase(caseId)
+    const savedId = localStorage.getItem('synapsex_active_case_id')
+    if (String(caseId) === String(savedId) || activeCase?.case_number === String(caseId) || String(activeCase?.id) === String(caseId)) {
+      localStorage.removeItem('synapsex_active_case_id')
+      setActiveCase(null)
+    }
     await fetchCases()
   }
 
@@ -70,6 +79,8 @@ export function CaseProvider({ children }) {
         console.error('Failed to delete case:', c.id, err)
       }
     }
+    localStorage.removeItem('synapsex_active_case_id')
+    setActiveCase(null)
     await fetchCases()
   }
 

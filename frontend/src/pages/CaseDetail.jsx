@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FolderOpen, HardDrive, Brain,
@@ -6,9 +6,9 @@ import {
   Activity, Video, Lock, Monitor, Usb,
   FileSearch, Network, CheckCircle2,
   ExternalLink, Download, Share2,
-  ChevronRight, Eye, MessageSquare,
+  ChevronRight, Eye, MessageSquare, Loader2,
 } from 'lucide-react'
-import { getCaseById } from '../data/cases'
+import { caseApi } from '../services/caseApi'
 import { useCase } from '../context/CaseContext'
 import './CaseDetail.css'
 
@@ -37,45 +37,81 @@ export default function CaseDetail() {
   const { caseId } = useParams()
   const navigate = useNavigate()
   const { cases, selectCase } = useCase()
+  const [fetchedCase, setFetchedCase] = useState(null)
+  const [loading, setLoading] = useState(false)
   const [toastMsg, setToastMsg] = useState(null)
 
-  const foundLive = (cases || []).find(x => x.case_id === caseId || String(x.id) === String(caseId))
-  const staticCase = getCaseById(caseId)
+  const foundLive = useMemo(() => {
+    return (cases || []).find(x => String(x.id) === String(caseId) || x.case_number === caseId || x.case_id === caseId) || fetchedCase
+  }, [cases, caseId, fetchedCase])
 
-  const c = useMemo(() => {
-    if (foundLive) {
-      return {
-        id: foundLive.case_id || `CASE-2026-${String(foundLive.id).padStart(3, '0')}`,
-        rawId: foundLive.id,
-        name: foundLive.title,
-        type: foundLive.case_type || 'Data Exfiltration',
-        status: foundLive.status?.toLowerCase() || 'active',
-        priority: foundLive.priority?.toLowerCase() || 'medium',
-        tlp: 'TLP:AMBER',
-        classification: 'CONFIDENTIAL',
-        lead: 'Lead Forensic Investigator',
-        openedDate: foundLive.opened_date ? new Date(foundLive.opened_date).toISOString().slice(0, 10) : new Date(foundLive.created_at).toISOString().slice(0, 10),
-        lastUpdatedFull: foundLive.updated_at ? new Date(foundLive.updated_at).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'Just now',
-        evidenceCount: foundLive.evidence_count || 0,
-        aiFindings: foundLive.finding_count || 0,
-        riskScore: foundLive.priority === 'critical' ? 92 : foundLive.priority === 'high' ? 76 : foundLive.priority === 'medium' ? 52 : 25,
-        riskLabel: foundLive.priority === 'critical' ? 'Critical' : foundLive.priority === 'high' ? 'High' : foundLive.priority === 'medium' ? 'Medium' : 'Low',
-        tags: ['Forensic', foundLive.case_type || 'General'],
-        team: ['Lead Forensic Investigator'],
-        description: foundLive.description || 'Active investigation case.',
-        timeline: [],
-        raw: foundLive
+  useEffect(() => {
+    let isMounted = true
+    const existing = (cases || []).find(x => String(x.id) === String(caseId) || x.case_number === caseId || x.case_id === caseId)
+    if (existing) {
+      selectCase(existing)
+      return
+    }
+
+    async function loadCase() {
+      setLoading(true)
+      try {
+        const data = await caseApi.getCase(caseId)
+        if (isMounted && data) {
+          setFetchedCase(data)
+          selectCase(data)
+        }
+      } catch (err) {
+        console.error('Failed to load case detail:', err)
+      } finally {
+        if (isMounted) setLoading(false)
       }
     }
-    return staticCase
-  }, [foundLive, staticCase])
+    loadCase()
+    return () => { isMounted = false }
+  }, [caseId, cases, selectCase])
+
+  const c = useMemo(() => {
+    if (!foundLive) return null
+    return {
+      id: foundLive.case_number || foundLive.case_id || `CASE-2026-${String(foundLive.id).padStart(3, '0')}`,
+      rawId: foundLive.id,
+      name: foundLive.title,
+      type: foundLive.case_type || 'Data Exfiltration',
+      status: foundLive.status?.toLowerCase() || 'active',
+      priority: foundLive.priority?.toLowerCase() || 'medium',
+      tlp: 'TLP:AMBER',
+      classification: 'CONFIDENTIAL',
+      lead: 'Lead Forensic Investigator',
+      openedDate: foundLive.opened_date ? new Date(foundLive.opened_date).toISOString().slice(0, 10) : new Date(foundLive.created_at).toISOString().slice(0, 10),
+      lastUpdatedFull: foundLive.updated_at ? new Date(foundLive.updated_at).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'Just now',
+      evidenceCount: foundLive.evidence_count || 0,
+      aiFindings: foundLive.finding_count || 0,
+      riskScore: foundLive.priority === 'critical' ? 92 : foundLive.priority === 'high' ? 76 : foundLive.priority === 'medium' ? 52 : 25,
+      riskLabel: foundLive.priority === 'critical' ? 'Critical' : foundLive.priority === 'high' ? 'High' : foundLive.priority === 'medium' ? 'Medium' : 'Low',
+      tags: ['Forensic', foundLive.case_type || 'General'],
+      team: ['Lead Forensic Investigator'],
+      description: foundLive.description || 'Active investigation case.',
+      timeline: [],
+      raw: foundLive
+    }
+  }, [foundLive])
+
+  if (loading) {
+    return (
+      <div className="cd-not-found" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <Loader2 size={36} className="ev-spin" style={{ color: 'var(--accent)', marginBottom: '16px' }} />
+        <h3 style={{ color: 'var(--text)', fontSize: '16px' }}>Loading Investigation Case...</h3>
+      </div>
+    )
+  }
 
   if (!c) {
     return (
       <div className="cd-not-found">
         <FolderOpen size={40} className="cd-nf-icon" />
         <h2>Case not found</h2>
-        <p>No case matches ID <code>{caseId}</code></p>
+        <p>No active case matches ID <code>{caseId}</code></p>
         <button className="cd-btn cd-btn--primary" onClick={() => navigate('/investigations')}>
           <ArrowLeft size={14} /> Back to Investigations
         </button>
@@ -201,7 +237,7 @@ export default function CaseDetail() {
             <Download size={13} /> Export
           </button>
           <button className="cd-btn cd-btn--primary" id="open-workspace-btn"
-            onClick={() => navigate(`/investigations/${c.id}/workspace`)}>
+            onClick={() => navigate(`/investigations/${c.rawId || c.id}/workspace`)}>
             <Eye size={13} /> Open Workspace
           </button>
         </div>

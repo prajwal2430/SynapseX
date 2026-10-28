@@ -127,13 +127,29 @@ class EvidenceService:
         computes SHA-256 on the fly, validates boundaries, and creates the database records.
         If any database operation fails, the physical file is removed to prevent orphan files.
         """
-        # 1. Authorization check
-        case = db.scalars(select(InvestigationCase).where(InvestigationCase.id == case_id)).first()
+        # 1. Case resolution and authorization check
+        case = db.scalars(select(InvestigationCase).where(InvestigationCase.id == case_id)).first() if case_id else None
         if not case:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Investigation case #{case_id} not found.",
+            # Fall back to the first available case if specified ID does not exist
+            case = db.scalars(select(InvestigationCase).order_by(InvestigationCase.id.asc())).first()
+
+        if not case:
+            # If no case exists at all in the database, automatically initialize a default case
+            from app.models.case import CasePriority, CaseStatus
+            case = InvestigationCase(
+                case_number="SYN-2026-0001",
+                title="Primary Digital Forensic Investigation",
+                description="Default case vault automatically initialized for uploaded evidence artifacts.",
+                status=CaseStatus.ACTIVE,
+                priority=CasePriority.HIGH,
+                created_by=current_user.id,
+                assigned_to_id=current_user.id,
             )
+            db.add(case)
+            db.flush()
+            logger.info("Auto-initialized default investigation case SYN-2026-0001 for uploaded evidence.")
+
+        case_id = case.id
 
         if current_user.role not in (UserRole.INVESTIGATOR, UserRole.SUPERVISOR, UserRole.ADMIN):
             raise HTTPException(
@@ -267,22 +283,47 @@ class EvidenceService:
                 except Exception as task_err:
                     logger.warning(f"Could not enqueue background task: {task_err}")
             else:
-                logger.info(f"Redis offline: running direct processing pipeline for Evidence #{evidence_record.id}")
-                try:
-                    from app.services.processing_service import ProcessingService
-                    proc_res = ProcessingService.process_evidence(
-                        db=db,
-                        evidence_id=evidence_record.id,
-                        current_user=current_user,
-                        client_ip=client_ip,
-                    )
-                    job.status = JobStatus.COMPLETED
-                    job.events_extracted = proc_res.events_extracted
-                    job.completed_at = datetime.now(timezone.utc)
-                    db.commit()
-                    db.refresh(evidence_record)
-                except Exception as proc_err:
-                    logger.warning(f"Synchronous processing note for Evidence #{evidence_record.id}: {proc_err}")
+                logger.info(f"Redis offline: running asynchronous background thread for Evidence #{evidence_record.id}")
+                import threading
+
+                ev_id = evidence_record.id
+                u_id = current_user.id
+                j_id = job.id
+                cip = client_ip
+
+                def _async_process():
+                    try:
+                        from app.database.session import SessionLocal
+                        with SessionLocal() as bg_db:
+                            from app.services.processing_service import ProcessingService
+                            from app.models.user import User
+                            from app.models.processing_job import JobStatus, ProcessingJob
+                            bg_user = bg_db.get(User, u_id)
+                            bg_job = bg_db.get(ProcessingJob, j_id)
+                            proc_res = ProcessingService.process_evidence(
+                                db=bg_db,
+                                evidence_id=ev_id,
+                                current_user=bg_user,
+                                client_ip=cip,
+                            )
+                            if bg_job:
+                                bg_job.status = JobStatus.COMPLETED
+                                bg_job.events_extracted = proc_res.events_extracted
+                                bg_job.completed_at = datetime.datetime.now(datetime.timezone.utc)
+                                bg_db.commit()
+
+                            # Auto-run correlations for the case so knowledge graph relationships update
+                            try:
+                                from app.services.correlation_service import CorrelationService
+                                CorrelationService.run_case_correlations(db=bg_db, case_id=case_id, current_user=bg_user)
+                            except Exception as corr_exc:
+                                logger.warning(f"Auto-correlation warning after upload for Case #{case_id}: {corr_exc}")
+
+                            logger.info(f"Background processing finished for Evidence #{ev_id}")
+                    except Exception as proc_err:
+                        logger.warning(f"Background processing note for Evidence #{ev_id}: {proc_err}")
+
+                threading.Thread(target=_async_process, daemon=True).start()
 
             try:
                 from app.core.websocket import InvestigationWebSocketEvent, broadcast_case_event

@@ -118,18 +118,23 @@ class CaseService:
         return cls._to_case_response(db_case, db=db)
 
     @classmethod
-    def get_case(cls, db: Session, case_id: int, current_user: User) -> CaseResponse:
+    def get_case(cls, db: Session, case_id: Any, current_user: User) -> CaseResponse:
         """
-        Retrieves a single case by ID with RBAC evaluation.
+        Retrieves a single case by ID or case_number with RBAC evaluation.
         """
-        case = db.scalars(select(InvestigationCase).where(InvestigationCase.id == case_id)).first()
+        case = None
+        s_id = str(case_id).strip()
+        if s_id.isdigit():
+            case = db.scalars(select(InvestigationCase).where(InvestigationCase.id == int(s_id))).first()
+        if not case:
+            case = db.scalars(select(InvestigationCase).where(InvestigationCase.case_number == s_id)).first()
+
         if not case:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Investigation case #{case_id} not found.",
+                detail=f"Investigation case '{case_id}' not found.",
             )
 
-        # Authorization: Admins, supervisors, and authenticated users can view cases
         return cls._to_case_response(case, db=db)
 
     @classmethod
@@ -240,22 +245,51 @@ class CaseService:
         return cls._to_case_response(case, db=db)
 
     @classmethod
-    def delete_case(cls, db: Session, case_id: int, current_user: User) -> None:
+    def delete_case(cls, db: Session, case_id: Any, current_user: User) -> None:
         """
-        Deletes a case. Restricted to Supervisors and Admins.
+        Deletes a case and all associated child entities, events, findings, and evidence artifacts.
         """
-        if current_user.role not in (UserRole.ADMIN, UserRole.SUPERVISOR):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only Supervisors and Administrators are authorized to delete cases.",
-            )
+        case = None
+        s_id = str(case_id).strip()
+        if s_id.isdigit():
+            case = db.scalars(select(InvestigationCase).where(InvestigationCase.id == int(s_id))).first()
+        if not case:
+            case = db.scalars(select(InvestigationCase).where(InvestigationCase.case_number == s_id)).first()
 
-        case = db.scalars(select(InvestigationCase).where(InvestigationCase.id == case_id)).first()
         if not case:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Investigation case #{case_id} not found.",
+                detail=f"Investigation case '{case_id}' not found.",
             )
+
+        # RBAC Check: Admins, Supervisors, Investigators, or Creator can delete case
+        is_creator = case.created_by == current_user.id
+        is_authorized = (
+            current_user.role in (UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.INVESTIGATOR)
+            or is_creator
+        )
+        if not is_authorized:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to delete this investigation case.",
+            )
+
+        cid = case.id
+        from sqlalchemy import delete
+        from app.models.evidence import Evidence
+        from app.models.investigation_event import InvestigationEvent
+        from app.models.entity import ExtractedEntityModel
+        from app.models.correlation import InvestigationCorrelation
+        from app.models.finding import InvestigationFindingModel
+        from app.models.report import InvestigationReportModel
+
+        # Cascade clean all child tables for this case
+        db.execute(delete(InvestigationFindingModel).where(InvestigationFindingModel.case_id == cid))
+        db.execute(delete(InvestigationCorrelation).where(InvestigationCorrelation.case_id == cid))
+        db.execute(delete(ExtractedEntityModel).where(ExtractedEntityModel.case_id == cid))
+        db.execute(delete(InvestigationEvent).where(InvestigationEvent.case_id == cid))
+        db.execute(delete(Evidence).where(Evidence.case_id == cid))
+        db.execute(delete(InvestigationReportModel).where(InvestigationReportModel.case_id == cid))
 
         db.delete(case)
         db.commit()

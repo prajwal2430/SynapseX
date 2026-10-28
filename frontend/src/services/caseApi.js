@@ -145,6 +145,26 @@ export const caseApi = {
     return res.json()
   },
 
+  // Knowledge Graph
+  async getGraph(caseId, options = {}) {
+    const query = new URLSearchParams()
+    if (options.maxNodes) query.set('max_nodes', options.maxNodes)
+    if (options.syncNeo4j) query.set('sync_neo4j', 'true')
+    const qs = query.toString() ? `?${query.toString()}` : ''
+    const res = await fetch(`${API_BASE}/cases/${caseId}/graph${qs}`, { headers: getAuthHeaders() })
+    if (!res.ok) throw new Error(`Failed to fetch knowledge graph for case #${caseId}`)
+    return res.json()
+  },
+
+  async syncGraph(caseId) {
+    const res = await fetch(`${API_BASE}/cases/${caseId}/graph/sync`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    })
+    if (!res.ok) throw new Error(`Failed to sync graph for case #${caseId}`)
+    return res.json()
+  },
+
   // Reports
   async getReports(caseId) {
     const res = await fetch(`${API_BASE}/cases/${caseId}/reports`, { headers: getAuthHeaders() })

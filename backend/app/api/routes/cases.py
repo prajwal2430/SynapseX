@@ -75,15 +75,15 @@ async def list_cases(
     "/{case_id}",
     response_model=CaseResponse,
     status_code=status.HTTP_200_OK,
-    summary="Get case details by ID",
+    summary="Get case details by ID or case_number",
 )
 async def get_case(
-    case_id: int,
+    case_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
-    Returns full details of an authorized investigation case.
+    Returns full details of an authorized investigation case by ID or case_number.
     """
     return CaseService.get_case(db=db, case_id=case_id, current_user=current_user)
 
@@ -117,12 +117,12 @@ async def update_case(
     summary="Delete an investigation case",
 )
 async def delete_case(
-    case_id: int,
+    case_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
-    Deletes an investigation case record. Restricted to Supervisors and Admins.
+    Deletes an investigation case record and cascades child artifacts.
     """
     CaseService.delete_case(db=db, case_id=case_id, current_user=current_user)
     return None

@@ -40,31 +40,45 @@ from app.processing.doc_parser import DocParser
 
 # Extension → Parser class registry
 _PARSER_REGISTRY: dict[str, Type[BaseParser]] = {
-    ".csv":  CSVParser,
-    ".json": JSONParser,
-    ".txt":  DocParser,
-    ".pdf":  DocParser,
-    ".docx": DocParser,
-    ".doc":  DocParser,
-    ".rtf":  DocParser,
-    ".evtx": EVTXParser,
-    ".jpg":  MediaParser,
-    ".jpeg": MediaParser,
-    ".png":  MediaParser,
-    ".webp": MediaParser,
-    ".mp4":  MediaParser,
-    ".mov":  MediaParser,
-    ".mkv":  MediaParser,
-    ".mp3":  MediaParser,
-    ".wav":  MediaParser,
-    ".m4a":  MediaParser,
+    ".csv":   CSVParser,
+    ".tsv":   CSVParser,
+    ".json":  JSONParser,
+    ".txt":   DocParser,
+    ".log":   DocParser,
+    ".audit": DocParser,
+    ".ini":   DocParser,
+    ".conf":  DocParser,
+    ".cfg":   DocParser,
+    ".xml":   DocParser,
+    ".yaml":  DocParser,
+    ".yml":   DocParser,
+    ".sql":   DocParser,
+    ".pdf":   DocParser,
+    ".docx":  DocParser,
+    ".doc":   DocParser,
+    ".rtf":   DocParser,
+    ".evtx":  EVTXParser,
+    ".jpg":   MediaParser,
+    ".jpeg":  MediaParser,
+    ".png":   MediaParser,
+    ".webp":  MediaParser,
+    ".mp4":   MediaParser,
+    ".mov":   MediaParser,
+    ".mkv":   MediaParser,
+    ".mp3":   MediaParser,
+    ".wav":   MediaParser,
+    ".m4a":   MediaParser,
 }
 
 
 def _resolve_parser(extension: str) -> Optional[BaseParser]:
-    """Return an instantiated parser for the given extension, or None."""
-    cls = _PARSER_REGISTRY.get(extension.lower())
-    return cls() if cls else None
+    """Return an instantiated parser for the given extension, or fallback to DocParser."""
+    ext = extension.lower() if extension else ""
+    cls = _PARSER_REGISTRY.get(ext)
+    if cls:
+        return cls()
+    # Safe fallback for arbitrary text/document files
+    return DocParser()
 
 
 class ProcessingService:
