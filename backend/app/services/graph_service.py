@@ -59,6 +59,7 @@ class GraphService:
         db: Session,
         case_id: int,
         sync_to_neo4j: bool = False,
+        max_nodes: Optional[int] = None,
     ) -> CaseKnowledgeGraphResponse:
         """
         Builds the unified Investigation Knowledge Graph for a case from PostgreSQL records,
@@ -86,6 +87,7 @@ class GraphService:
         breakdown: Dict[str, int] = {}
 
         evidence_lookup = {ev.id: ev for ev in evidence_records}
+        event_lookup = {e.id: e for e in event_records}
 
         def add_node(
             n_id: str,
@@ -98,6 +100,7 @@ class GraphService:
             ev_ids: Optional[List[int]] = None,
             event_ids: Optional[List[int]] = None,
             props: Optional[Dict[str, Any]] = None,
+            timeline: Optional[List[Dict[str, Any]]] = None,
         ) -> str:
             if n_id not in node_id_set:
                 node_id_set.add(n_id)
@@ -122,6 +125,7 @@ class GraphService:
                         evidence=ev_labels,
                         evidence_ids=ev_ids,
                         event_ids=event_ids,
+                        timeline=timeline or [],
                         properties=props or {},
                     )
                 )
@@ -216,9 +220,26 @@ class GraphService:
             key = (ent.entity_type.value, ent.normalized_value)
             entity_groups.setdefault(key, []).append(ent)
 
+        # Sort entity groups by relevance:
+        # 1. Number of evidence files containing the entity
+        # 2. Base risk score of the entity type
+        # 3. Total occurrence count
+        sorted_groups = sorted(
+            entity_groups.items(),
+            key=lambda item: (
+                len({i.evidence_id for i in item[1] if i.evidence_id}),
+                _ENTITY_TYPE_MAP.get(item[0][0], ("", "", "", 50))[3],
+                len(item[1]),
+            ),
+            reverse=True,
+        )
+
+        if max_nodes is not None and max_nodes > 0:
+            sorted_groups = sorted_groups[:max_nodes]
+
         entity_node_map: Dict[Tuple[str, str], str] = {}
 
-        for (e_type, norm_val), items in entity_groups.items():
+        for (e_type, norm_val), items in sorted_groups:
             first = items[0]
             display_info = _ENTITY_TYPE_MAP.get(e_type, ("Entity", "generic", "info", 50))
             n_type, type_key, risk, base_score = display_info
@@ -230,6 +251,17 @@ class GraphService:
             entity_node_map[(e_type, norm_val)] = ent_node_id
 
             score = min(99, base_score + (len(ev_ids) * 5))
+
+            # Build mini-timeline for entity from associated events
+            node_timeline = []
+            for eid in event_ids[:5]:
+                evt = event_lookup.get(eid)
+                if evt:
+                    t_str = evt.timestamp.strftime("%H:%M:%S") if evt.timestamp else "Logged"
+                    node_timeline.append({
+                        "time": t_str,
+                        "event": f"Observed in {evt.source or 'evidence'} ({evt.event_type.value})"
+                    })
 
             add_node(
                 n_id=ent_node_id,
@@ -247,6 +279,7 @@ class GraphService:
                     "normalized_value": norm_val,
                     "occurrences": len(items),
                 },
+                timeline=node_timeline,
             )
 
             # Link entity to originating evidence (OBSERVED_IN)

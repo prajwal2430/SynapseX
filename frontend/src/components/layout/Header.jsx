@@ -25,8 +25,14 @@ import {
   CheckCircle2,
   ExternalLink,
   Fingerprint,
-  RotateCcw
+  RotateCcw,
+  FolderOpen,
+  Plus,
+  FolderPlus,
+  X,
+  Briefcase
 } from 'lucide-react'
+import { useCase } from '../../context/CaseContext'
 import './Header.css'
 
 const PAGE_TITLES = {
@@ -95,17 +101,32 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const page = PAGE_TITLES[pathname] || { title: 'SynapseX', subtitle: 'Autonomous Digital Evidence Intelligence Platform' }
+  const { cases, activeCase, selectCase, createCase } = useCase()
   const [searchFocused, setSearchFocused] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [identityModalOpen, setIdentityModalOpen] = useState(false)
   const [identityInitialTab, setIdentityInitialTab] = useState('profile')
+  const [caseMenuOpen, setCaseMenuOpen] = useState(false)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
   const [isLocked, setIsLocked] = useState(false)
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
+
+  const [newCase, setNewCase] = useState({
+    title: '',
+    case_number: '',
+    description: '',
+    case_type: 'Cybercrime',
+    priority: 'high',
+    status: 'active',
+  })
 
   const notifRef = useRef(null)
   const userMenuRef = useRef(null)
+  const caseRef = useRef(null)
 
   // Auth context
   const auth = useAuth()
@@ -126,10 +147,14 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
       if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
         setUserMenuOpen(false)
       }
+      if (caseRef.current && !caseRef.current.contains(event.target)) {
+        setCaseMenuOpen(false)
+      }
     }
     const handleLock = () => {
       setIsLocked(true)
       setUserMenuOpen(false)
+      setCaseMenuOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     window.addEventListener('synapsex-lock-session', handleLock)
@@ -143,6 +168,39 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
     setUserMenuOpen(false)
     setIdentityInitialTab(tab)
     setIdentityModalOpen(true)
+  }
+
+  const handleCreateSubmit = async (e) => {
+    e.preventDefault()
+    if (!newCase.title.trim()) {
+      setCreateError('Case title is required')
+      return
+    }
+    try {
+      setCreating(true)
+      setCreateError('')
+      await createCase({
+        title: newCase.title.trim(),
+        case_number: newCase.case_number.trim() || undefined,
+        description: newCase.description.trim() || undefined,
+        case_type: newCase.case_type,
+        priority: newCase.priority,
+        status: newCase.status,
+      })
+      setCreateModalOpen(false)
+      setNewCase({
+        title: '',
+        case_number: '',
+        description: '',
+        case_type: 'Cybercrime',
+        priority: 'high',
+        status: 'active',
+      })
+    } catch (err) {
+      setCreateError(err.message || 'Failed to create case')
+    } finally {
+      setCreating(false)
+    }
   }
 
   // Handle Session Unlock
@@ -194,6 +252,72 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
               )}
             </div>
             <p className="header-page-subtitle">{page.subtitle}</p>
+          </div>
+
+          <div className="header-divider desktop-only" />
+
+          {/* ── Active Case Selector ── */}
+          <div className="header-case-dropdown-wrap desktop-only" ref={caseRef}>
+            <button
+              className={`header-case-btn ${caseMenuOpen ? 'header-case-btn--active' : ''}`}
+              onClick={() => {
+                setCaseMenuOpen(o => !o)
+                setUserMenuOpen(false)
+                setNotifOpen(false)
+              }}
+              title="Switch active investigation case"
+            >
+              <div className="case-btn-icon-wrap">
+                <FolderOpen size={13} />
+              </div>
+              <div className="case-btn-info">
+                <span className="case-badge-id font-mono">{activeCase?.case_number || 'CASE-2026-001'}</span>
+                <span className="case-badge-title">{activeCase?.title || 'Select Case'}</span>
+              </div>
+              <ChevronDown size={11} className={`case-btn-chevron ${caseMenuOpen ? 'open' : ''}`} />
+            </button>
+
+            {caseMenuOpen && (
+              <div className="case-dropdown-menu">
+                <div className="case-dropdown-header">
+                  <span className="case-dropdown-title">Active Investigations</span>
+                  <button
+                    className="btn-create-case-pill"
+                    onClick={() => {
+                      setCaseMenuOpen(false)
+                      setCreateModalOpen(true)
+                    }}
+                  >
+                    <Plus size={11} /> New Case
+                  </button>
+                </div>
+                <div className="case-dropdown-list">
+                  {cases.map(c => (
+                    <button
+                      key={c.id}
+                      className={`case-dropdown-item ${activeCase?.id === c.id ? 'case-dropdown-item--active' : ''}`}
+                      onClick={() => {
+                        selectCase(c)
+                        setCaseMenuOpen(false)
+                      }}
+                    >
+                      <div className="case-item-header">
+                        <span className="case-item-number font-mono">{c.case_number}</span>
+                        <span className={`case-priority-tag priority-${c.priority}`}>{c.priority}</span>
+                      </div>
+                      <div className="case-item-title">{c.title}</div>
+                      <div className="case-item-meta">
+                        <span>{c.case_type || 'Forensics'}</span>
+                        <span>•</span>
+                        <span>{c.evidence_count || 0} files</span>
+                        <span>•</span>
+                        <span className="case-status-indicator">{c.status}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -475,6 +599,130 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
               <Shield size={11} />
               <span>SynapseX Autonomous Digital Evidence Intelligence Platform</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Create New Case Modal ── */}
+      {createModalOpen && (
+        <div className="case-modal-overlay">
+          <div className="case-modal-card">
+            <div className="case-modal-header">
+              <div className="case-modal-title-wrap">
+                <FolderPlus size={18} className="text-accent" />
+                <div>
+                  <h3>Create New Investigation Case</h3>
+                  <p>Initialize a real database-persisted digital forensic case</p>
+                </div>
+              </div>
+              <button
+                className="case-modal-close"
+                onClick={() => setCreateModalOpen(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateSubmit} className="case-modal-form">
+              {createError && (
+                <div className="case-modal-alert">
+                  <AlertTriangle size={14} />
+                  <span>{createError}</span>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Case Title *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Suspicious Financial Communication"
+                  value={newCase.title}
+                  onChange={e => setNewCase({ ...newCase, title: e.target.value })}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Case Identifier (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. CASE-2026-001 (auto-generated if empty)"
+                    value={newCase.case_number}
+                    onChange={e => setNewCase({ ...newCase, case_number: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Case Type</label>
+                  <select
+                    value={newCase.case_type}
+                    onChange={e => setNewCase({ ...newCase, case_type: e.target.value })}
+                  >
+                    <option value="Cybercrime">Cybercrime</option>
+                    <option value="Data Exfiltration">Data Exfiltration</option>
+                    <option value="Financial Fraud">Financial Fraud</option>
+                    <option value="Unauthorized Access">Unauthorized Access</option>
+                    <option value="Ransomware">Ransomware</option>
+                    <option value="Phishing">Phishing</option>
+                    <option value="Forensic Audit">Forensic Audit</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Priority</label>
+                  <select
+                    value={newCase.priority}
+                    onChange={e => setNewCase({ ...newCase, priority: e.target.value })}
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Initial Status</label>
+                  <select
+                    value={newCase.status}
+                    onChange={e => setNewCase({ ...newCase, status: e.target.value })}
+                  >
+                    <option value="active">Active</option>
+                    <option value="under_review">Under Review</option>
+                    <option value="closed">Closed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Case Description & Scope</label>
+                <textarea
+                  rows={3}
+                  placeholder="Provide investigative context, alleged breach vectors, or scope notes..."
+                  value={newCase.description}
+                  onChange={e => setNewCase({ ...newCase, description: e.target.value })}
+                />
+              </div>
+
+              <div className="case-modal-actions">
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={() => setCreateModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-create"
+                  disabled={creating}
+                >
+                  {creating ? 'Creating Case...' : 'Create Case & Open'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

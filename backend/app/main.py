@@ -23,6 +23,7 @@ from app.api.routes.reports import case_report_router, report_router
 from app.api.routes.simulation import router as simulation_router
 from app.api.routes.timeline import router as timeline_router
 from app.api.routes.websocket import router as websocket_router
+from app.api.routes.chat import router as chat_router
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from contextlib import asynccontextmanager
@@ -79,6 +80,12 @@ async def lifespan(app: FastAPI):
         ensure_evidence_columns()
     except Exception as exc:
         logger.warning(f"[Lifespan] Evidence column migration note: {exc}")
+
+    try:
+        from app.database.migrate_forensic_pipeline import migrate_forensic_pipeline_columns
+        migrate_forensic_pipeline_columns()
+    except Exception as exc:
+        logger.warning(f"[Lifespan] Forensic pipeline migration note: {exc}")
     await mongo_manager.connect_to_mongo()
     await mongo_manager.init_collection_indexes()
 
@@ -180,6 +187,7 @@ app.include_router(case_analysis_router, prefix="/api")
 app.include_router(analysis_router, prefix="/api")
 app.include_router(rbac_router, prefix="/api")
 app.include_router(audit_logs_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
 
 # Live Real-Time WebSockets (/ws/cases/{case_id})
 app.include_router(websocket_router)

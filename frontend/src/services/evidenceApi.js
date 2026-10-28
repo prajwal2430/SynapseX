@@ -76,26 +76,64 @@ export const evidenceApi = {
    * @param {Object} options - { caseId, agentType, fileType }
    * @returns {Promise<Object>} Created evidence record
    */
-  async uploadEvidence(file, { caseId = 1, agentType = null, fileType = null } = {}) {
-    const formData = new FormData()
-    formData.append('file', file)
-    if (caseId) formData.append('case_id', String(caseId))
-    if (agentType) formData.append('agent_type', agentType)
-    if (fileType) formData.append('file_type', fileType)
+  uploadEvidence(file, { caseId = 1, agentType = null, fileType = null, onProgress = null } = {}) {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (caseId) formData.append('case_id', String(caseId))
+      if (agentType) formData.append('agent_type', agentType)
+      if (fileType) formData.append('file_type', fileType)
 
-    const res = await fetch(`${BASE_URL}/evidence/upload`, {
-      method: 'POST',
-      headers: getAuthHeaders(), // Do NOT set Content-Type manually so browser sets multipart boundary
-      body: formData,
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${BASE_URL}/evidence/upload`)
+
+      const headers = getAuthHeaders()
+      Object.keys(headers).forEach(k => {
+        xhr.setRequestHeader(k, headers[k])
+      })
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable && evt.total > 0) {
+            const percent = Math.min(95, Math.round((evt.loaded / evt.total) * 100))
+            onProgress(percent)
+          }
+        }
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText)
+            if (onProgress) onProgress(100)
+            resolve(data.evidence)
+          } catch (e) {
+            reject(new Error('Invalid response format from server'))
+          }
+        } else {
+          let detailMsg = `Upload failed with status ${xhr.status}`
+          try {
+            const errData = JSON.parse(xhr.responseText)
+            if (xhr.status === 401) {
+              detailMsg = 'Session expired or unauthenticated. Please log in again.'
+            } else if (typeof errData.detail === 'string') {
+              detailMsg = errData.detail
+            } else if (Array.isArray(errData.detail)) {
+              detailMsg = errData.detail.map(d => d.msg || d.detail || JSON.stringify(d)).join('; ')
+            } else if (errData.message) {
+              detailMsg = errData.message
+            }
+          } catch (_) {}
+          reject(new Error(detailMsg))
+        }
+      }
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during file upload. Check server connectivity.'))
+      }
+
+      xhr.send(formData)
     })
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.detail || `Upload failed with status ${res.status}`)
-    }
-
-    const data = await res.json()
-    return data.evidence
   },
 
   /**

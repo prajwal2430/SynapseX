@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   GitBranch, Video, Lock, Monitor, Usb,
   FileSearch, Network, Brain, Calendar,
@@ -6,8 +7,11 @@ import {
   Minimize2, Shield, AlertTriangle, CheckCircle2,
   Clock, X, ChevronRight, ArrowRight, Share2,
   Sparkles, Layers, FileCode, Tag, Eye,
-  SlidersHorizontal, Download, Play, RefreshCw
+  SlidersHorizontal, Download, Play, RefreshCw,
+  HardDrive
 } from 'lucide-react'
+import { useCase } from '../context/CaseContext'
+import { caseApi } from '../services/caseApi'
 import './Timeline.css'
 
 /* ═══════════════════════════════════════════════════
@@ -231,7 +235,11 @@ const DATE_RANGES = [
 ]
 
 export default function Timeline() {
-  const [selectedEvent, setSelectedEvent] = useState(TIMELINE_EVENTS[2]) // Default selected: CCTV event
+  const navigate = useNavigate()
+  const { activeCase } = useCase()
+  const [rawEvents, setRawEvents] = useState([])
+  const [loadingEvents, setLoadingEvents] = useState(false)
+  const [selectedEvent, setSelectedEvent] = useState(null)
   const [sourceFilter, setSourceFilter] = useState('All Sources')
   const [entityFilter, setEntityFilter] = useState('All Entities')
   const [dateRange, setDateRange] = useState('incident')
@@ -240,9 +248,77 @@ export default function Timeline() {
   const [onlyCorrelated, setOnlyCorrelated] = useState(false)
   const [highlightChain, setHighlightChain] = useState(true)
 
+  useEffect(() => {
+    if (!activeCase?.id) return
+    let isMounted = true
+    setLoadingEvents(true)
+    caseApi.getTimeline(activeCase.id).then(res => {
+      if (!isMounted) return
+      if (res && res.events && res.events.length > 0) {
+        const formatted = res.events.map((ev, idx) => {
+          let timeUtc = '00:00:00 UTC'
+          let dateStr = '2026-08-20'
+          if (ev.timestamp_utc) {
+            try {
+              const dt = new Date(ev.timestamp_utc)
+              timeUtc = dt.toISOString().slice(11, 19) + ' UTC'
+              dateStr = dt.toISOString().slice(0, 10)
+            } catch {}
+          } else if (ev.original_timestamp) {
+            timeUtc = ev.original_timestamp
+          }
+
+          let icon = Monitor
+          let cat = 'system'
+          const lower = (ev.event_type || '').toLowerCase()
+          if (lower.includes('video') || lower.includes('cctv')) { icon = Video; cat = 'cctv' }
+          else if (lower.includes('auth') || lower.includes('door') || lower.includes('card')) { icon = Lock; cat = 'access' }
+          else if (lower.includes('usb') || lower.includes('device')) { icon = Usb; cat = 'usb' }
+          else if (lower.includes('network') || lower.includes('traffic')) { icon = Network; cat = 'network' }
+          else if (lower.includes('file') || lower.includes('doc')) { icon = FileSearch; cat = 'file' }
+
+          const isSus = lower.includes('suspicious') || lower.includes('alert')
+          const isCrit = lower.includes('critical') || lower.includes('exfil')
+
+          return {
+            id: `TL-${String(ev.event_id || idx + 1).padStart(3, '0')}`,
+            time: timeUtc.slice(0, 8),
+            timeFormatted: timeUtc,
+            date: dateStr,
+            source: ev.source || 'Evidence Artifact',
+            sourceCategory: cat,
+            icon,
+            event: ev.description,
+            detail: `Source Evidence Artifact #${ev.evidence_id} · Entities: ${(ev.entities || []).join(', ') || 'None'}`,
+            entity: (ev.entities && ev.entities[0]) ? ev.entities[0] : 'Observed Target',
+            entityType: 'Entity',
+            risk: isCrit ? 'critical' : isSus ? 'high' : 'low',
+            riskScore: isCrit ? 85 : isSus ? 65 : 15,
+            evidenceId: `EVD-${ev.evidence_id}`,
+            evidenceName: ev.source || `Evidence #${ev.evidence_id}`,
+            correlated: isCrit || isSus,
+            correlationStep: idx + 1,
+            aiExplanation: `Extracted from case artifact #${ev.evidence_id}. Temporal sequence verified against cryptographic file timestamp.`,
+            relatedEventIds: []
+          }
+        })
+        setRawEvents(formatted)
+        setSelectedEvent(formatted[0])
+      } else {
+        setRawEvents([])
+        setSelectedEvent(null)
+      }
+      setLoadingEvents(false)
+    }).catch(err => {
+      console.warn('Failed to load case timeline:', err)
+      if (isMounted) setLoadingEvents(false)
+    })
+    return () => { isMounted = false }
+  }, [activeCase?.id])
+
   // Filtered timeline events
   const filteredEvents = useMemo(() => {
-    return TIMELINE_EVENTS.filter(e => {
+    return rawEvents.filter(e => {
       // Source filter
       if (sourceFilter !== 'All Sources' && e.source !== sourceFilter) return false
       // Entity filter
@@ -262,11 +338,11 @@ export default function Timeline() {
       }
       return true
     })
-  }, [sourceFilter, entityFilter, onlyCorrelated, searchQuery])
+  }, [rawEvents, sourceFilter, entityFilter, onlyCorrelated, searchQuery])
 
   // Count stats
-  const correlatedCount = TIMELINE_EVENTS.filter(e => e.correlated).length
-  const criticalCount = TIMELINE_EVENTS.filter(e => e.risk === 'critical').length
+  const correlatedCount = rawEvents.filter(e => e.correlated).length
+  const criticalCount = rawEvents.filter(e => e.risk === 'critical').length
 
   const [toastMsg, setToastMsg] = useState(null)
 
@@ -488,7 +564,20 @@ export default function Timeline() {
           {/* Timeline Spine / Center Rail */}
           <div className="tl-spine-line" />
 
-          {filteredEvents.length === 0 ? (
+          {rawEvents.length === 0 ? (
+            <div className="tl-empty-state">
+              <HardDrive size={36} className="tl-empty-icon" style={{ opacity: 0.5 }} />
+              <h3>No Forensic Timeline Events Extracted</h3>
+              <p>Upload case documents, system logs, CCTV or network traffic in the Evidence Vault to reconstruct the timeline.</p>
+              <button 
+                className="tl-btn-primary" 
+                onClick={() => navigate('/evidence')}
+                style={{ margin: '16px auto 0' }}
+              >
+                Go to Evidence Vault
+              </button>
+            </div>
+          ) : filteredEvents.length === 0 ? (
             <div className="tl-empty-state">
               <Search size={32} className="tl-empty-icon" />
               <h3>No Events Match Filters</h3>

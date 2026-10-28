@@ -49,9 +49,11 @@ class InvestigationFindingModel(Base):
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    classification: Mapped[str] = mapped_column(String(32), default="INFERENCE", nullable=False, index=True)  # FACT, CORRELATION, INFERENCE, CONTRADICTION, UNKNOWN
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.85)
 
     summary: Mapped[str] = mapped_column(Text, nullable=False)
+    related_entities: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array of entity strings
 
     # Structured JSON payloads
     observations: Mapped[str] = mapped_column(Text, nullable=False)               # List of observation items

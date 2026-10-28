@@ -11,6 +11,8 @@ class CaseBase(BaseModel):
     description: Optional[str] = Field(None, description="Detailed case background or incident notes")
     status: CaseStatus = Field(default=CaseStatus.ACTIVE, description="Lifecycle status")
     priority: CasePriority = Field(default=CasePriority.MEDIUM, description="Investigation priority level")
+    case_type: Optional[str] = Field(default="Cybercrime", description="Category of investigation (e.g. Data Exfiltration, Financial Fraud)")
+    opened_date: Optional[datetime.datetime] = Field(None, description="Date when case was formally opened")
 
 
 class CaseCreateRequest(BaseModel):
@@ -25,6 +27,8 @@ class CaseCreateRequest(BaseModel):
     description: Optional[str] = Field(None, description="Detailed case background or incident notes")
     status: Optional[CaseStatus] = Field(default=CaseStatus.ACTIVE)
     priority: Optional[CasePriority] = Field(default=CasePriority.MEDIUM)
+    case_type: Optional[str] = Field(default="Cybercrime")
+    opened_date: Optional[datetime.datetime] = None
     assigned_to_id: Optional[int] = Field(None, description="User ID to assign the case to")
 
 
@@ -34,6 +38,8 @@ class CaseUpdateRequest(BaseModel):
     description: Optional[str] = None
     status: Optional[CaseStatus] = None
     priority: Optional[CasePriority] = None
+    case_type: Optional[str] = None
+    opened_date: Optional[datetime.datetime] = None
     assigned_to_id: Optional[int] = None
 
 
@@ -45,6 +51,11 @@ class CaseResponse(CaseBase):
     assigned_to_id: Optional[int] = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
+
+    # Counts
+    evidence_count: int = 0
+    entity_count: int = 0
+    finding_count: int = 0
 
     # Computed fields for readable creator and assignee names
     creator_name: Optional[str] = None

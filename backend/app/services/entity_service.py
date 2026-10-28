@@ -52,7 +52,11 @@ FILE_EXT_PATTERN = re.compile(
 _USER_KEYS = frozenset({
     "user", "username", "user_account", "account", "login_user",
     "subject_user", "target_user", "admin_user", "actor", "account_name",
+    "source_account", "destination_account", "src_account", "dst_account",
+    "sender_account", "receiver_account", "beneficiary_account",
+    "account_number", "acc_no", "source_acc", "dest_acc",
 })
+ACCOUNT_PATTERN = re.compile(r"\bACC-[A-Za-z0-9-]+\b")
 _IP_KEYS = frozenset({
     "ip", "src_ip", "dst_ip", "remote_ip", "client_ip", "host_ip",
     "ip_address", "source_ip", "dest_ip", "sourceip", "destip",
@@ -259,6 +263,10 @@ class EntityService:
                 # 4. USB hardware signatures
                 for usb_match in USB_HARDWARE_PATTERN.findall(meta_text):
                     record_candidate(EntityType.USB_DEVICE, usb_match, ExtractionMethod.REGEX_USB.value, ev_id, 0.95, f"Hardware signature in {source_desc}")
+
+                # 5. Financial account patterns
+                for acc_match in ACCOUNT_PATTERN.findall(meta_text):
+                    record_candidate(EntityType.USER_ACCOUNT, acc_match, ExtractionMethod.STRUCTURED_FIELD.value, ev_id, 0.95, f"Account pattern in {source_desc}")
 
         # Persist new entities
         if new_entities_to_add:

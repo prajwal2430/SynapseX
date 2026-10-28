@@ -60,5 +60,6 @@ class CaseTimelineResponse(BaseModel):
     page_size: int
     total_pages: int
     observed_events: List[TimelineObservedEvent] = Field(default_factory=list)
+    events: List[TimelineObservedEvent] = Field(default_factory=list)
     time_clusters: List[TimelineCluster] = Field(default_factory=list)
     possible_sequences: List[PossibleSequence] = Field(default_factory=list)

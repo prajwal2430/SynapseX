@@ -63,11 +63,15 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_BYTES: int = 100 * 1024 * 1024  # 100 MB default max file size
     ALLOWED_EVIDENCE_EXTENSIONS: List[str] = [
         # Documents & Forensic Reports
-        ".pdf", ".docx", ".doc", ".rtf", ".txt", ".odt",
+        ".pdf", ".docx", ".doc", ".rtf", ".txt", ".odt", ".md", ".html", ".htm",
         # Structured Data & Logs
-        ".csv", ".tsv", ".json", ".xml", ".yaml", ".yml", ".sql", ".evtx", ".log", ".audit",
+        ".csv", ".tsv", ".json", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml", ".sql", ".evtx", ".log", ".audit", ".parquet",
+        # Spreadsheets
+        ".xlsx", ".xls",
+        # Email & Communication Forensics
+        ".eml", ".msg", ".mbox",
         # Network & Memory & Disk Artifacts
-        ".pcap", ".pcapng", ".cap", ".raw", ".mem", ".dmp", ".vmem", ".e01", ".dd",
+        ".pcap", ".pcapng", ".cap", ".har", ".raw", ".mem", ".dmp", ".vmem", ".e01", ".dd", ".iso", ".img", ".vmdk", ".vhdx",
         # Images
         ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".svg",
         # Audio Evidence
@@ -75,7 +79,7 @@ class Settings(BaseSettings):
         # Video Evidence
         ".mp4", ".avi", ".mkv", ".mov", ".webm", ".m4v", ".wmv",
         # Archives
-        ".zip", ".tar", ".gz", ".7z",
+        ".zip", ".tar", ".gz", ".7z", ".rar",
     ]
 
     # Dangerous extensions explicitly blocked from evidence ingestion

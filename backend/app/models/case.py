@@ -1,6 +1,7 @@
+import datetime
 import enum
 from typing import Optional
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin
@@ -44,6 +45,8 @@ class InvestigationCase(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
+    case_type: Mapped[Optional[str]] = mapped_column(String(128), default="Cybercrime", nullable=True)
+    opened_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_by: Mapped[int] = mapped_column(
         Integer,

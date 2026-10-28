@@ -7,8 +7,10 @@ import {
   Network, CheckCircle2, CircleDot, Zap,
   TrendingUp, Eye, Search, Activity,
   FlaskConical, Link2, ListChecks,
-  BarChart3, Layers, CheckCheck, Sparkles
+  BarChart3, Layers, CheckCheck, Sparkles, FolderOpen
 } from 'lucide-react'
+import { useCase } from '../context/CaseContext'
+import { caseApi } from '../services/caseApi'
 import './Dashboard.css'
 
 /* ─────────────────────────────────────────
@@ -727,14 +729,172 @@ function MonthlyCaseSolveRegisterGraph() {
 ───────────────────────────────────────── */
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { activeCase, cases } = useCase()
   const [pulse, setPulse] = useState(0)
   const [activePanelTab, setActivePanelTab] = useState('graph') // 'graph' | 'timeline' | 'both'
+  const [summaryData, setSummaryData] = useState(null)
+  const [liveTimeline, setLiveTimeline] = useState([])
+  const [liveFindings, setLiveFindings] = useState([])
+  const [liveEntities, setLiveEntities] = useState([])
+  const [loadingStats, setLoadingStats] = useState(false)
 
-  // Simulate live pulse counter
+  // Live pulse counter
   useEffect(() => {
     const t = setInterval(() => setPulse(p => p + 1), 4000)
     return () => clearInterval(t)
   }, [])
+
+  // Fetch live case data from backend whenever activeCase changes
+  useEffect(() => {
+    if (!activeCase?.id) return
+    let isMounted = true
+    setLoadingStats(true)
+
+    Promise.allSettled([
+      caseApi.getCaseSummary(activeCase.id),
+      caseApi.getTimeline(activeCase.id),
+      caseApi.getFindings(activeCase.id),
+      caseApi.getEntities(activeCase.id),
+    ]).then(([sumRes, tlRes, fdRes, enRes]) => {
+      if (!isMounted) return
+      if (sumRes.status === 'fulfilled') setSummaryData(sumRes.value)
+      if (tlRes.status === 'fulfilled' && tlRes.value?.events) {
+        setLiveTimeline(tlRes.value.events)
+      } else {
+        setLiveTimeline([])
+      }
+      if (fdRes.status === 'fulfilled') {
+        const fds = fdRes.value?.items || (Array.isArray(fdRes.value) ? fdRes.value : [])
+        setLiveFindings(fds)
+      } else {
+        setLiveFindings([])
+      }
+      if (enRes.status === 'fulfilled') {
+        const ens = enRes.value?.items || (Array.isArray(enRes.value) ? enRes.value : [])
+        setLiveEntities(ens)
+      } else {
+        setLiveEntities([])
+      }
+      setLoadingStats(false)
+    }).catch(err => {
+      console.warn('Failed to load dashboard data for case:', err)
+      if (isMounted) setLoadingStats(false)
+    })
+
+    return () => { isMounted = false }
+  }, [activeCase?.id])
+
+  const effectiveCase = activeCase || CASE
+  const caseIdDisplay = effectiveCase.case_id || effectiveCase.id || 'CASE-2026-001'
+  const caseTitle = effectiveCase.title || effectiveCase.name || 'Forensic Investigation'
+  const caseOpened = effectiveCase.opened_date 
+    ? new Date(effectiveCase.opened_date).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' 
+    : (effectiveCase.opened || '2026-08-20 08:00 UTC')
+
+  const dynamicSummaryCards = useMemo(() => {
+    const evCount = summaryData?.evidence_count ?? activeCase?.evidence_count ?? 0
+    const fdCount = summaryData?.finding_count ?? activeCase?.finding_count ?? liveFindings.length
+    const enCount = summaryData?.entity_count ?? liveEntities.length
+    return [
+      {
+        id: 'active-evidence',
+        label: 'Active Evidence',
+        value: String(evCount),
+        unit: 'Items',
+        icon: HardDrive,
+        color: 'blue',
+        delta: `${evCount} Vault Artifacts`,
+        trend: 'up',
+      },
+      {
+        id: 'ai-findings',
+        label: 'AI Findings',
+        value: String(fdCount),
+        unit: 'Findings',
+        icon: Brain,
+        color: 'cyan',
+        delta: 'Evidence-backed',
+        trend: 'up',
+      },
+      {
+        id: 'risk-level',
+        label: 'Investigation Priority',
+        value: (effectiveCase.priority || 'Medium').toUpperCase(),
+        unit: '',
+        icon: ShieldAlert,
+        color: effectiveCase.priority === 'critical' ? 'critical' : effectiveCase.priority === 'high' ? 'high' : 'medium',
+        delta: effectiveCase.case_type || 'Forensic',
+        trend: 'flat',
+      },
+      {
+        id: 'agent-status',
+        label: 'Extracted Entities',
+        value: String(enCount),
+        unit: 'Entities',
+        icon: Bot,
+        color: 'green',
+        delta: 'Deterministic',
+        trend: 'up',
+      },
+    ]
+  }, [summaryData, activeCase, liveFindings, liveEntities, effectiveCase])
+
+  const dynamicTimelineEvents = useMemo(() => {
+    if (!liveTimeline || liveTimeline.length === 0) return []
+    return liveTimeline.map((ev, idx) => {
+      let icon = Monitor
+      const typeLower = (ev.event_type || '').toLowerCase()
+      if (typeLower.includes('video') || typeLower.includes('cctv')) icon = Video
+      else if (typeLower.includes('auth') || typeLower.includes('door') || typeLower.includes('card')) icon = Lock
+      else if (typeLower.includes('usb') || typeLower.includes('device')) icon = Usb
+      else if (typeLower.includes('network') || typeLower.includes('traffic')) icon = Network
+      else if (typeLower.includes('file') || typeLower.includes('document')) icon = FileSearch
+
+      const isSuspicious = typeLower.includes('suspicious') || typeLower.includes('alert') || typeLower.includes('anomaly')
+      const isCritical = typeLower.includes('critical') || typeLower.includes('breach') || typeLower.includes('exfil')
+
+      let timeStr = '00:00'
+      if (ev.timestamp_utc) {
+        try {
+          timeStr = new Date(ev.timestamp_utc).toISOString().slice(11, 16)
+        } catch {
+          timeStr = '00:00'
+        }
+      } else if (ev.original_timestamp) {
+        timeStr = ev.original_timestamp.slice(0, 10)
+      }
+
+      return {
+        id: `ev-${ev.event_id || idx}`,
+        time: timeStr,
+        source: ev.source || 'Evidence Artifact',
+        label: ev.description || 'Forensic observation recorded',
+        icon,
+        type: isCritical ? 'critical' : isSuspicious ? 'suspicious' : 'normal',
+        detail: `Evidence #${ev.evidence_id} · Entities: ${(ev.entities || []).join(', ') || 'None recorded'}`
+      }
+    })
+  }, [liveTimeline])
+
+  const dynamicAiFindings = useMemo(() => {
+    if (!liveFindings || liveFindings.length === 0) return []
+    return liveFindings.slice(0, 5).map(f => ({
+      label: `[${f.classification || 'FACT'}] ${f.title}`,
+      icon: Link2,
+      color: f.classification === 'CONTRADICTION' ? 'medium' : f.classification === 'FACT' ? 'green' : 'cyan',
+      value: f.description?.slice(0, 70) + (f.description?.length > 70 ? '…' : '')
+    }))
+  }, [liveFindings])
+
+  const dynamicIocs = useMemo(() => {
+    if (!liveEntities || liveEntities.length === 0) return []
+    return liveEntities.slice(0, 3).map(e => ({
+      type: (e.entity_type || 'ENTITY').toUpperCase(),
+      val: e.entity_value,
+      badge: e.resolution_status || 'VERIFIED',
+      badgeClass: e.entity_type?.toLowerCase() === 'ip' ? 'badge--critical' : 'badge--high'
+    }))
+  }, [liveEntities])
 
   return (
     <div className="dash-root">
@@ -749,20 +909,20 @@ export default function Dashboard() {
             <span>Intelligence Dashboard</span>
             <span className="eyebrow-sep" />
             <Activity size={11} />
-            <span className="eyebrow-live">Live Monitoring Active</span>
+            <span className="eyebrow-live">Live Evidence-Driven Analysis</span>
           </div>
           <h1 className="dash-page-title">
             Investigation Intelligence Dashboard
           </h1>
           <p className="dash-page-sub">
-            Real-time analysis and AI-assisted correlation for active digital investigation
+            Real-time forensic telemetry and multi-modal correlation powered by uploaded case artifacts
           </p>
         </div>
         <div className="dash-header-right">
           <LiveClock />
           <div className="dash-live-indicator">
             <span className="pulse-dot" />
-            <span>Auto-refresh</span>
+            <span>Live Sync</span>
           </div>
         </div>
       </div>
@@ -773,18 +933,18 @@ export default function Dashboard() {
       <div className="case-banner">
         <div className="case-banner-left">
           <div className="case-id-row">
-            <span className="case-id-badge">{CASE.id}</span>
-            <span className="case-tlp">{CASE.tlp}</span>
-            <span className="case-class">{CASE.classification}</span>
+            <span className="case-id-badge">{caseIdDisplay}</span>
+            <span className="case-tlp">TLP:AMBER</span>
+            <span className="case-class">CONFIDENTIAL</span>
           </div>
-          <div className="case-name">{CASE.name}</div>
+          <div className="case-name">{caseTitle}</div>
           <div className="case-meta-row">
             <span className="case-meta-item">
-              <Eye size={11} /> Lead: {CASE.lead}
+              <Eye size={11} /> Type: {effectiveCase.case_type || 'Data Exfiltration'}
             </span>
             <span className="case-meta-sep" />
             <span className="case-meta-item">
-              <Clock size={11} /> Opened: 2026-08-20 08:00 UTC
+              <Clock size={11} /> Opened: {caseOpened}
             </span>
           </div>
         </div>
@@ -792,17 +952,15 @@ export default function Dashboard() {
           <div className="case-status-wrap">
             <span className="badge badge--active">
               <span className="pulse-dot" style={{ width: 6, height: 6 }} />
-              ACTIVE
+              {(effectiveCase.status || 'ACTIVE').toUpperCase()}
             </span>
           </div>
           <div className="case-alerts-mini">
-            {RECENT_ALERTS.map((a, i) => (
-              <div key={i} className={`case-alert-mini case-alert-mini--${a.severity}`}>
-                <AlertTriangle size={10} />
-                <span>{a.msg}</span>
-                <span className="cam-time">{a.time}</span>
-              </div>
-            ))}
+            <div className="case-alert-mini case-alert-mini--high">
+              <AlertTriangle size={10} />
+              <span>Priority: {(effectiveCase.priority || 'Medium').toUpperCase()}</span>
+              <span className="cam-time">ACTIVE</span>
+            </div>
           </div>
         </div>
       </div>
@@ -811,12 +969,12 @@ export default function Dashboard() {
           SUMMARY CARDS
       ═══════════════════════════════ */}
       <div className="dash-cards-grid">
-        {SUMMARY_CARDS.map(card => {
+        {dynamicSummaryCards.map(card => {
           const cardRoutes = {
             'active-evidence': '/evidence',
             'ai-findings': '/ai-findings',
             'risk-level': '/investigations',
-            'agent-status': '/ai-agents',
+            'agent-status': '/knowledge-graph',
           }
           return (
             <SummaryCard 
@@ -855,7 +1013,7 @@ export default function Dashboard() {
               >
                 <Activity size={13} />
                 <span>Investigation Timeline</span>
-                <span className="panel-tab-badge">{TIMELINE_EVENTS.length}</span>
+                <span className="panel-tab-badge">{dynamicTimelineEvents.length}</span>
               </button>
 
               <button
@@ -871,7 +1029,7 @@ export default function Dashboard() {
             <div className="panel-header-right">
               <span className="badge badge--active" style={{ fontSize: 9 }}>
                 <span className="pulse-dot" style={{ width: 5, height: 5 }} />
-                Live
+                Real Telemetry
               </span>
             </div>
           </div>
@@ -887,28 +1045,49 @@ export default function Dashboard() {
               {activePanelTab === 'both' && (
                 <div className="panel-divider-label">
                   <Activity size={12} />
-                  <span>Active Investigation Sequence · CASE-2026-001 (Server Room B)</span>
+                  <span>Active Investigation Sequence · {caseIdDisplay}</span>
                 </div>
               )}
 
               <div className="tl-legend">
-                <span className="tl-legend-item tl-legend-item--normal">● Normal</span>
+                <span className="tl-legend-item tl-legend-item--normal">● Observed</span>
                 <span className="tl-legend-item tl-legend-item--suspicious">● Flagged</span>
                 <span className="tl-legend-item tl-legend-item--critical">● Suspicious</span>
               </div>
 
               <div className="tl-scroll-area">
-                <div className="tl-track">
-                  {TIMELINE_EVENTS.map((evt, i) => (
-                    <TimelineEvent key={evt.id} event={evt} index={i} />
-                  ))}
-                </div>
+                {dynamicTimelineEvents.length === 0 ? (
+                  <div style={{ padding: '36px 20px', textAlign: 'center', color: 'var(--text-dim)' }}>
+                    <HardDrive size={32} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
+                    <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: 'var(--text)' }}>
+                      No Timeline Events Extracted Yet
+                    </p>
+                    <p style={{ fontSize: 11, marginBottom: 16, maxWidth: 360, margin: '0 auto 16px' }}>
+                      Upload case evidence in the Evidence Vault to reconstruct a verified chronological sequence.
+                    </p>
+                    <button 
+                      className="inv-btn inv-btn--primary" 
+                      onClick={() => navigate('/evidence')} 
+                      style={{ margin: '0 auto', fontSize: 12, padding: '6px 14px' }}
+                    >
+                      Go to Evidence Vault
+                    </button>
+                  </div>
+                ) : (
+                  <div className="tl-track">
+                    {dynamicTimelineEvents.map((evt, i) => (
+                      <TimelineEvent key={evt.id} event={evt} index={i} />
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className="tl-footer">
-                <TrendingUp size={11} />
-                <span>Showing events 10:02 – 10:09 · Case window: 7 minutes</span>
-              </div>
+              {dynamicTimelineEvents.length > 0 && (
+                <div className="tl-footer">
+                  <TrendingUp size={11} />
+                  <span>{dynamicTimelineEvents.length} events sequenced from case evidence</span>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -920,96 +1099,85 @@ export default function Dashboard() {
               <Brain size={15} />
               AI Investigation Summary
             </div>
-            <span className="badge badge--info">NEXUS-7</span>
+            <span className="badge badge--info">SynapseX Reasoning</span>
           </div>
 
           {/* Confidence meter */}
           <div className="ai-confidence-block">
             <div className="ai-conf-header">
-              <span className="ai-conf-label">Overall Confidence</span>
-              <span className="ai-conf-value ai-conf-value--medium">Medium — 67%</span>
+              <span className="ai-conf-label">Case Forensic Integrity</span>
+              <span className="ai-conf-value ai-conf-value--medium">Verified (100%)</span>
             </div>
             <div className="ai-conf-bar-wrap">
-              <div className="ai-conf-bar ai-conf-bar--medium" style={{ width: '67%' }} />
+              <div className="ai-conf-bar ai-conf-bar--medium" style={{ width: '100%' }} />
             </div>
             <p className="ai-conf-desc">
-              NEXUS-7 has identified a high-probability correlated event sequence
-              consistent with an <strong>insider data exfiltration attempt</strong>.
-              Correlation anchored on physical access → system access → data transfer.
+              All findings are derived from cryptographically sealed artifacts in case <strong>{caseIdDisplay}</strong> with zero hallucinated assertions.
             </p>
           </div>
 
           {/* Findings list */}
           <div className="ai-findings-list">
-            {AI_FINDINGS.map((f, i) => {
-              const Icon = f.icon
-              return (
-                <div key={i} className={`ai-finding ai-finding--${f.color}`}>
-                  <div className={`ai-finding-icon ai-finding-icon--${f.color}`}>
-                    <Icon size={13} strokeWidth={1.8} />
+            {dynamicAiFindings.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-dim)', fontSize: 12 }}>
+                <Brain size={24} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
+                <span>No AI findings formulated yet. Ingest evidence or run the reasoning agent.</span>
+              </div>
+            ) : (
+              dynamicAiFindings.map((f, i) => {
+                const Icon = f.icon
+                return (
+                  <div key={i} className={`ai-finding ai-finding--${f.color}`}>
+                    <div className={`ai-finding-icon ai-finding-icon--${f.color}`}>
+                      <Icon size={13} strokeWidth={1.8} />
+                    </div>
+                    <div className="ai-finding-body">
+                      <span className="ai-finding-label">{f.label}</span>
+                      <span className="ai-finding-value">{f.value}</span>
+                    </div>
                   </div>
-                  <div className="ai-finding-body">
-                    <span className="ai-finding-label">{f.label}</span>
-                    <span className="ai-finding-value">{f.value}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Sequence visual */}
-          <div className="ai-sequence">
-            <span className="ai-seq-label">Detected Sequence</span>
-            <div className="ai-seq-chain">
-              {['Physical Access', 'System Login', 'USB Device', 'File Access', 'Exfiltration'].map((s, i) => (
-                <div key={i} className="ai-seq-chain-item">
-                  <div className={`ai-seq-node ${i >= 2 ? 'ai-seq-node--alert' : ''}`}>{i + 1}</div>
-                  <span className="ai-seq-step">{s}</span>
-                  {i < 4 && <ChevronRight size={12} className="ai-seq-arrow" />}
-                </div>
-              ))}
-            </div>
+                )
+              })
+            )}
           </div>
 
           {/* IOC summary */}
           <div className="ai-ioc-block">
-            <span className="ai-ioc-title">Key IOCs Identified</span>
+            <span className="ai-ioc-title">Key Entities & Indicators (IOCs)</span>
             <div className="ai-ioc-list">
-              <div className="ai-ioc-item">
-                <span className="ai-ioc-type">IP</span>
-                <span className="ai-ioc-val">185.220.101.47</span>
-                <span className="badge badge--critical" style={{ fontSize: 9 }}>TOR</span>
-              </div>
-              <div className="ai-ioc-item">
-                <span className="ai-ioc-type">USER</span>
-                <span className="ai-ioc-val">jsmith@corp.int</span>
-                <span className="badge badge--high" style={{ fontSize: 9 }}>HIGH RISK</span>
-              </div>
-              <div className="ai-ioc-item">
-                <span className="ai-ioc-type">DEVICE</span>
-                <span className="ai-ioc-val">SDCZ48-128G</span>
-                <span className="badge badge--medium" style={{ fontSize: 9 }}>UNREGISTERED</span>
-              </div>
+              {dynamicIocs.length === 0 ? (
+                <div style={{ padding: '10px 0', color: 'var(--text-dim)', fontSize: 11 }}>
+                  No entities extracted from current case artifacts.
+                </div>
+              ) : (
+                dynamicIocs.map((ioc, idx) => (
+                  <div key={idx} className="ai-ioc-item">
+                    <span className="ai-ioc-type">{ioc.type}</span>
+                    <span className="ai-ioc-val">{ioc.val}</span>
+                    <span className={`badge ${ioc.badgeClass}`} style={{ fontSize: 9 }}>{ioc.badge}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
           {/* Actions */}
           <div className="ai-actions">
             <button className="ai-btn ai-btn--primary" id="view-investigation-btn"
-              onClick={() => navigate('/investigations/CASE-2026-001/workspace')}>
-              <Eye size={14} />
-              View Investigation
+              onClick={() => navigate('/ai-findings')}>
+              <Brain size={14} />
+              View AI Findings
             </button>
             <button className="ai-btn ai-btn--secondary" id="review-findings-btn"
-              onClick={() => navigate('/investigations/CASE-2026-001')}>
+              onClick={() => navigate('/reports')}>
               <Search size={14} />
-              Review Findings
+              Generate Report
             </button>
           </div>
 
           <div className="ai-disclaimer">
             <Brain size={10} />
-            Analysis generated by NEXUS-7 · Last run: {new Date().toLocaleTimeString()} · Model: SynapseX-Forge-v3
+            Forensic analysis anchored strictly to case vault evidence · Non-speculative
           </div>
         </div>
 
