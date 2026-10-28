@@ -78,6 +78,7 @@ class ExtractedEntityModel(Base):
 
     extraction_method: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    resolution_status: Mapped[str] = mapped_column(String(32), default="unresolved", nullable=False, index=True) # confirmed, probable, possible, unresolved
 
     context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Mapped to underlying SQL column 'metadata'

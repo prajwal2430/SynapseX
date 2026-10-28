@@ -560,8 +560,8 @@ class ReportService:
                 "processing_status": ev.processing_status.value,
                 "integrity_status": ev.integrity_status.value,
                 "last_verified_at": ev.last_verified_at.isoformat() if ev.last_verified_at else None,
-                "uploaded_at": ev.uploaded_at.isoformat() if ev.uploaded_at else None,
-                "created_at": ev.uploaded_at.isoformat() if ev.uploaded_at else None,
+                "uploaded_at": ev.uploaded_at.isoformat() if hasattr(ev, 'uploaded_at') and ev.uploaded_at else None,
+                "created_at": ev.uploaded_at.isoformat() if hasattr(ev, 'uploaded_at') and ev.uploaded_at else (ev.updated_at.isoformat() if hasattr(ev, 'updated_at') and ev.updated_at else None),
             }
             for ev in evidence_items
         ]

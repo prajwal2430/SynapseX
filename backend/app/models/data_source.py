@@ -1,7 +1,7 @@
 import datetime
 import enum
 from typing import Optional
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -16,6 +16,7 @@ class SourceType(str, enum.Enum):
     JSON_SOURCE = "json_source"
     API = "api"
     WEBHOOK = "webhook"
+    ENDPOINT = "endpoint"
 
 
 class SourceStatus(str, enum.Enum):
@@ -24,12 +25,13 @@ class SourceStatus(str, enum.Enum):
     PROCESSING = "processing"
     ERROR = "error"
     OFFLINE = "offline"
+    DEGRADED = "degraded"
 
 
 class DataSource(Base):
     """
-    SQLAlchemy ORM model for authorized data sources connected to an investigation case.
-    Stores metadata, source credentials/configs (secrets masked), and operational status.
+    SQLAlchemy ORM model for connected forensic data sources.
+    Tracks ingest feeds, telemetry connections, and log stream statuses.
     """
     __tablename__ = "data_sources"
 
@@ -41,28 +43,13 @@ class DataSource(Base):
         index=True,
     )
     source_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    source_type: Mapped[SourceType] = mapped_column(
-        Enum(SourceType, name="source_type_enum", values_callable=lambda x: [e.value for e in x]),
-        nullable=False,
-        index=True,
-    )
-    # Encrypted / JSON configuration string for credentials, stream URLs, connection parameters
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     configuration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    status: Mapped[SourceStatus] = mapped_column(
-        Enum(SourceStatus, name="source_status_enum", values_callable=lambda x: [e.value for e in x]),
-        default=SourceStatus.ACTIVE,
-        nullable=False,
-        index=True,
-    )
-    
-    last_seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
+    status: Mapped[str] = mapped_column(String(32), default=SourceStatus.ACTIVE, nullable=False, index=True)
+    last_seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
+        DateTime,
+        default=datetime.datetime.utcnow,
         nullable=False,
     )
 

@@ -6,8 +6,9 @@ import {
   SlidersHorizontal, AlertTriangle, Clock,
   HardDrive, Brain, Users, Shield,
   ArrowUpDown, X, LayoutGrid, List,
+  Trash2, Loader2,
 } from 'lucide-react'
-import { CASES } from '../data/cases'
+import { useCase } from '../context/CaseContext'
 import './Investigations.css'
 
 /* ── helpers ── */
@@ -99,9 +100,12 @@ function StatsStrip({ cases = [] }) {
 ═══════════════════════════════════════ */
 export default function Investigations() {
   const navigate = useNavigate()
+  const { cases, selectCase, createCase, deleteCase, deleteAllCases } = useCase()
 
-  const [casesList, setCasesList] = useState(CASES)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false)
   const [toastMsg, setToastMsg] = useState(null)
   const [newCaseData, setNewCaseData] = useState({
     name: '',
@@ -114,6 +118,37 @@ export default function Investigations() {
     tags: 'Data, Insider, Network'
   })
 
+  async function confirmDeleteCase() {
+    if (!deleteTarget) return
+    setIsDeleting(true)
+    try {
+      if (deleteTarget.rawId || deleteTarget.id) {
+        await deleteCase(deleteTarget.rawId || deleteTarget.id)
+      }
+      setToastMsg(`Investigation case ${deleteTarget.id} removed.`)
+      setDeleteTarget(null)
+    } catch (err) {
+      console.error('Failed to delete case:', err)
+      setToastMsg('Failed to delete investigation case.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  async function confirmDeleteAllCases() {
+    setIsDeleting(true)
+    try {
+      await deleteAllCases()
+      setToastMsg('All investigation cases have been removed.')
+      setShowDeleteAllModal(false)
+    } catch (err) {
+      console.error('Failed to delete all cases:', err)
+      setToastMsg('Failed to remove all cases.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   const [search,     setSearch]     = useState('')
   const [statusFilter, setStatus]   = useState('all')
   const [priorityFilter, setPriority] = useState('all')
@@ -121,6 +156,33 @@ export default function Investigations() {
   const [sortDir,    setSortDir]    = useState('asc')
   const [viewMode,   setViewMode]   = useState('table')   // 'table' | 'card'
   const [filtersOpen, setFiltersOpen] = useState(false)
+
+  const casesList = useMemo(() => {
+    return (cases || []).map(c => ({
+      id: c.case_number || c.case_id || `CASE-2026-${String(c.id).padStart(3, '0')}`,
+      rawId: c.id,
+      caseNumber: c.case_number,
+      name: c.title || 'Untitled Case',
+      type: c.case_type || 'Data Exfiltration',
+      status: c.status?.toLowerCase() || 'active',
+      priority: c.priority?.toLowerCase() || 'medium',
+      tlp: 'TLP:AMBER',
+      classification: 'CONFIDENTIAL',
+      lead: 'Lead Forensic Investigator',
+      openedDate: c.opened_date ? new Date(c.opened_date).toISOString().slice(0, 10) : new Date(c.created_at).toISOString().slice(0, 10),
+      lastUpdated: 'Recently',
+      lastUpdatedFull: c.updated_at ? new Date(c.updated_at).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '',
+      evidenceCount: c.evidence_count || 0,
+      aiFindings: c.finding_count || 0,
+      riskScore: c.priority === 'critical' ? 92 : c.priority === 'high' ? 76 : c.priority === 'medium' ? 52 : 25,
+      riskLabel: c.priority === 'critical' ? 'Critical' : c.priority === 'high' ? 'High' : c.priority === 'medium' ? 'Medium' : 'Low',
+      tags: ['Forensic', c.case_type || 'General'],
+      team: ['Lead Forensic Investigator'],
+      description: c.description || 'Active investigation case.',
+      timeline: [],
+      raw: c
+    }))
+  }, [cases])
 
   /* ── derived list ── */
   const filtered = useMemo(() => {
@@ -153,46 +215,35 @@ export default function Investigations() {
     else { setSortField(field); setSortDir('asc') }
   }
 
-  function handleCreateCase(e) {
+  async function handleCreateCase(e) {
     e.preventDefault()
     if (!newCaseData.name.trim()) return
-    const nextIdNum = casesList.length + 1
-    const id = `CASE-2026-${String(nextIdNum).padStart(3, '0')}`
-    const createdCase = {
-      id,
-      name: newCaseData.name.trim(),
-      type: newCaseData.type,
-      status: 'active',
-      priority: newCaseData.priority,
-      tlp: newCaseData.tlp,
-      classification: newCaseData.classification,
-      lead: newCaseData.lead,
-      openedDate: new Date().toISOString().slice(0, 10),
-      lastUpdated: 'Just now',
-      lastUpdatedFull: new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC',
-      evidenceCount: 0,
-      aiFindings: 0,
-      riskScore: newCaseData.priority === 'critical' ? 88 : newCaseData.priority === 'high' ? 68 : 45,
-      riskLabel: newCaseData.priority === 'critical' ? 'Critical' : newCaseData.priority === 'high' ? 'High' : 'Medium',
-      tags: newCaseData.tags.split(',').map(t => t.trim()).filter(Boolean),
-      team: [newCaseData.lead],
-      description: newCaseData.description.trim() || 'Active forensic investigation.',
-      timeline: []
+    try {
+      const created = await createCase({
+        title: newCaseData.name.trim(),
+        description: newCaseData.description.trim() || 'Active forensic investigation.',
+        case_type: newCaseData.type,
+        priority: newCaseData.priority,
+        status: 'active'
+      })
+      setIsCreateOpen(false)
+      setNewCaseData({
+        name: '',
+        type: 'Data Exfiltration',
+        priority: 'high',
+        tlp: 'TLP:AMBER',
+        classification: 'CONFIDENTIAL',
+        lead: 'Special Agent M. Reynolds',
+        description: '',
+        tags: 'Data, Insider, Network'
+      })
+      setToastMsg(`Investigation ${created?.case_id || 'case'} created successfully`)
+      setTimeout(() => setToastMsg(null), 3500)
+    } catch (err) {
+      console.error('Failed to create case:', err)
+      setToastMsg('Failed to create case.')
+      setTimeout(() => setToastMsg(null), 3500)
     }
-    setCasesList(prev => [createdCase, ...prev])
-    setIsCreateOpen(false)
-    setNewCaseData({
-      name: '',
-      type: 'Data Exfiltration',
-      priority: 'high',
-      tlp: 'TLP:AMBER',
-      classification: 'CONFIDENTIAL',
-      lead: 'Special Agent M. Reynolds',
-      description: '',
-      tags: 'Data, Insider, Network'
-    })
-    setToastMsg(`Investigation ${id} created successfully`)
-    setTimeout(() => setToastMsg(null), 3500)
   }
 
   function SortIcon({ field }) {
@@ -238,6 +289,16 @@ export default function Investigations() {
           </p>
         </div>
         <div className="inv-header-right">
+          {casesList.length > 0 && (
+            <button
+              className="inv-btn inv-btn--ghost"
+              style={{ color: 'var(--alert-critical)', borderColor: 'rgba(255, 59, 59, 0.3)' }}
+              onClick={() => setShowDeleteAllModal(true)}
+              title="Remove all investigation cases from database"
+            >
+              <Trash2 size={14} /> Remove All Cases
+            </button>
+          )}
           <button
             className="inv-btn inv-btn--ghost"
             id="toggle-view-btn"
@@ -388,9 +449,21 @@ export default function Investigations() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="inv-empty-row">
-                    <Search size={20} />
-                    <span>No cases match your filters</span>
+                  <td colSpan={11} className="inv-empty-row" style={{ padding: '60px 20px', textAlign: 'center' }}>
+                    <FolderOpen size={36} style={{ color: 'var(--text-muted)', margin: '0 auto 12px', opacity: 0.5 }} />
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', marginBottom: '6px' }}>
+                      {search || statusFilter !== 'all' || priorityFilter !== 'all'
+                        ? 'No cases match your filters'
+                        : 'No Active Investigation Cases'}
+                    </div>
+                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '420px', margin: '0 auto 16px' }}>
+                      {search || statusFilter !== 'all' || priorityFilter !== 'all'
+                        ? 'Try adjusting your search criteria or resetting filters.'
+                        : 'All investigation cases have been cleared. Open a new case to begin evidence intelligence tracking.'}
+                    </p>
+                    <button className="inv-btn inv-btn--primary" style={{ margin: '0 auto' }} onClick={() => setIsCreateOpen(true)}>
+                      <Plus size={14} /> Create New Case
+                    </button>
                   </td>
                 </tr>
               )}
@@ -398,7 +471,10 @@ export default function Investigations() {
                 <tr
                   key={c.id}
                   className={`inv-row inv-row--${c.priority} ${c.status === 'closed' ? 'inv-row--closed' : ''}`}
-                  onClick={() => navigate(`/investigations/${c.id}`)}
+                  onClick={() => {
+                    selectCase(c.raw)
+                    navigate(`/investigations/${c.id}`)
+                  }}
                   id={`case-row-${c.id}`}
                   style={{ animationDelay: `${idx * 40}ms` }}
                 >
@@ -453,7 +529,20 @@ export default function Investigations() {
                     </div>
                   </td>
                   <td>
-                    <ChevronRight size={14} className="inv-row-arrow" />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                      <button
+                        className="inv-btn inv-btn--ghost"
+                        style={{ padding: '4px 6px', color: 'var(--alert-critical)', border: '1px solid rgba(255,59,59,0.2)' }}
+                        title="Delete investigation case"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteTarget(c)
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                      <ChevronRight size={14} className="inv-row-arrow" />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -466,16 +555,31 @@ export default function Investigations() {
       {viewMode === 'card' && (
         <div className="inv-card-grid">
           {filtered.length === 0 && (
-            <div className="inv-empty-card">
-              <Search size={20} />
-              <span>No cases match your filters</span>
+            <div className="inv-empty-card" style={{ gridColumn: '1 / -1', padding: '60px 20px', textAlign: 'center' }}>
+              <FolderOpen size={36} style={{ color: 'var(--text-muted)', margin: '0 auto 12px', opacity: 0.5 }} />
+              <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', marginBottom: '6px' }}>
+                {search || statusFilter !== 'all' || priorityFilter !== 'all'
+                  ? 'No cases match your filters'
+                  : 'No Active Investigation Cases'}
+              </div>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '420px', margin: '0 auto 16px' }}>
+                {search || statusFilter !== 'all' || priorityFilter !== 'all'
+                  ? 'Try adjusting your search criteria or resetting filters.'
+                  : 'All investigation cases have been cleared. Open a new case to begin evidence intelligence tracking.'}
+              </p>
+              <button className="inv-btn inv-btn--primary" style={{ margin: '0 auto' }} onClick={() => setIsCreateOpen(true)}>
+                <Plus size={14} /> Create New Case
+              </button>
             </div>
           )}
           {filtered.map((c, idx) => (
             <div
               key={c.id}
               className={`inv-card inv-card--${c.priority}`}
-              onClick={() => navigate(`/investigations/${c.id}`)}
+              onClick={() => {
+                selectCase(c.raw)
+                navigate(`/investigations/${c.id}`)
+              }}
               id={`case-card-${c.id}`}
               style={{ animationDelay: `${idx * 50}ms` }}
             >
@@ -488,6 +592,17 @@ export default function Investigations() {
                 <div className="inv-card-badges">
                   <PriorityBadge level={c.priority} />
                   {c.tlp && <span className={`inv-tlp inv-tlp--${c.tlp.includes('RED') ? 'red' : c.tlp.includes('AMBER') ? 'amber' : 'green'}`}>{c.tlp}</span>}
+                  <button
+                    className="inv-btn inv-btn--ghost"
+                    style={{ padding: '2px 5px', color: 'var(--alert-critical)', border: '1px solid rgba(255,59,59,0.2)', marginLeft: '4px' }}
+                    title="Delete case"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setDeleteTarget(c)
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 </div>
               </div>
 
@@ -768,6 +883,112 @@ export default function Investigations() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Single Case Confirmation Modal ── */}
+      {deleteTarget && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+        }}>
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid rgba(255, 59, 59, 0.4)',
+            borderRadius: '8px',
+            width: '100%',
+            maxWidth: '460px',
+            padding: '24px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--alert-critical)', marginBottom: '12px' }}>
+              <AlertTriangle size={20} />
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>Confirm Case Deletion</h3>
+            </div>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.6', margin: '0 0 16px' }}>
+              Are you sure you want to delete investigation case <strong style={{ color: 'var(--text)' }}>{deleteTarget.id} — {deleteTarget.name}</strong>?
+              This will permanently remove the case and all associated evidence, findings, and intelligence records.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="inv-btn inv-btn--ghost"
+                onClick={() => setDeleteTarget(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="inv-btn inv-btn--primary"
+                style={{ background: 'var(--alert-critical)', color: '#fff', border: 'none' }}
+                onClick={confirmDeleteCase}
+                disabled={isDeleting}
+              >
+                {isDeleting ? <Loader2 size={13} className="ev-spin" /> : <Trash2 size={13} />}
+                {isDeleting ? 'Deleting...' : 'Delete Case'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Purge All Cases Confirmation Modal ── */}
+      {showDeleteAllModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+        }}>
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid rgba(255, 59, 59, 0.4)',
+            borderRadius: '8px',
+            width: '100%',
+            maxWidth: '480px',
+            padding: '24px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--alert-critical)', marginBottom: '12px' }}>
+              <AlertTriangle size={22} />
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>Purge All Investigation Cases</h3>
+            </div>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.6', margin: '0 0 16px' }}>
+              Are you sure you want to permanently delete <strong style={{ color: 'var(--text)' }}>all {casesList.length} investigation cases</strong>?
+              This action cannot be undone and will purge all evidence files, chain of custody logs, and reasoning graphs.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="inv-btn inv-btn--ghost"
+                onClick={() => setShowDeleteAllModal(false)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="inv-btn inv-btn--primary"
+                style={{ background: 'var(--alert-critical)', color: '#fff', border: 'none' }}
+                onClick={confirmDeleteAllCases}
+                disabled={isDeleting}
+              >
+                {isDeleting ? <Loader2 size={13} className="ev-spin" /> : <Trash2 size={13} />}
+                {isDeleting ? 'Purging All Cases...' : 'Yes, Delete All Cases'}
+              </button>
+            </div>
           </div>
         </div>
       )}

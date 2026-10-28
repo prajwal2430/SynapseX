@@ -59,6 +59,9 @@ class FindingResponse(BaseModel):
     recommended_verification: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
 
+    classification: str = Field(default="INFERENCE", description="FACT, CORRELATION, INFERENCE, CONTRADICTION, UNKNOWN")
+    related_entities: List[str] = Field(default_factory=list)
+
     review_status: FindingReviewStatus
     reviewed_by: Optional[int] = None
     reviewer_name: Optional[str] = None

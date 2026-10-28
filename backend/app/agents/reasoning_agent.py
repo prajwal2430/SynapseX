@@ -193,19 +193,88 @@ def reasoning_agent(state: InvestigationState) -> Dict[str, Any]:
 
     # ── Formulate structured InvestigationFinding records for DB storage ────
     findings_list: List[Dict[str, Any]] = []
+
+    # 1. FACT Findings: Direct facts grounded in verified evidence
+    if evidence_items:
+        fnd_id = f"FND-{case_id}-{uuid.uuid4().hex[:6].upper()}"
+        fact_desc = f"{len(evidence_items)} forensic evidence artifact(s) securely cataloged with cryptographic SHA-256 hashes."
+        findings_list.append({
+            "finding_id": fnd_id,
+            "title": "Evidence Ingestion & Cryptographic Registration",
+            "description": fact_desc,
+            "confidence": 1.0,
+            "category": "evidence_inventory",
+            "classification": "FACT",
+            "referenced_evidence_ids": evidence_ids,
+            "referenced_event_ids": event_ids[:10],
+            "supporting_entities": [f"{e.get('entity_type')}:{e.get('entity_value')}" for e in extracted_entities[:5]],
+            "related_entities": [e.get("entity_value", "") for e in extracted_entities[:5] if e.get("entity_value")],
+        })
+
+    # 2. CORRELATION Findings: Cross-evidence linkages
+    for corr in correlations[:4]:
+        fnd_id = f"FND-{case_id}-{uuid.uuid4().hex[:6].upper()}"
+        findings_list.append({
+            "finding_id": fnd_id,
+            "title": f"Cross-Evidence Correlation: {corr.get('title')}",
+            "description": corr.get("description", "Cross-evidence correlation detected."),
+            "confidence": corr.get("correlation_score", 0.85),
+            "category": "cross_evidence_correlation",
+            "classification": "CORRELATION",
+            "referenced_evidence_ids": corr.get("supporting_evidence_ids", evidence_ids),
+            "referenced_event_ids": corr.get("related_event_ids", event_ids[:10]),
+            "supporting_entities": corr.get("entities", []),
+            "related_entities": corr.get("entities", []),
+        })
+
+    # 3. INFERENCE Findings: Multi-step investigative leads
     for idx, hyp in enumerate(potential_hypotheses, start=1):
         fnd_id = f"FND-{case_id}-{uuid.uuid4().hex[:6].upper()}"
-        finding = InvestigationFinding(
-            finding_id=fnd_id,
-            title=f"Investigative Lead #{idx}: {hyp.split(':')[0]}",
-            description=hyp,
-            confidence=0.85,
-            category="reasoning_lead",
-            referenced_evidence_ids=evidence_ids,
-            referenced_event_ids=event_ids[:15],
-            supporting_entities=[f"{e.get('entity_type')}:{e.get('entity_value')}" for e in extracted_entities[:5]],
-        )
-        findings_list.append(finding.model_dump())
+        findings_list.append({
+            "finding_id": fnd_id,
+            "title": f"Investigative Lead #{idx}: {hyp.split(':')[0]}",
+            "description": hyp,
+            "confidence": 0.75,
+            "category": "reasoning_lead",
+            "classification": "INFERENCE",
+            "referenced_evidence_ids": evidence_ids,
+            "referenced_event_ids": event_ids[:15],
+            "supporting_entities": [f"{e.get('entity_type')}:{e.get('entity_value')}" for e in extracted_entities[:5]],
+            "related_entities": [e.get("entity_value", "") for e in extracted_entities[:5] if e.get("entity_value")],
+        })
+
+    # 4. CONTRADICTION Findings: Detect conflicts across sources
+    locations = [e.get("entity_value") for e in extracted_entities if e.get("entity_type") == "location"]
+    if len(set(locations)) > 1 and len(evidence_items) > 1:
+        fnd_id = f"FND-{case_id}-{uuid.uuid4().hex[:6].upper()}"
+        findings_list.append({
+            "finding_id": fnd_id,
+            "title": "Potential Conflict: Divergent Location Telemetry",
+            "description": f"Extracted evidence contains multiple distinct locations ({', '.join(set(locations)[:3])}) across sources. Requires investigator corroboration.",
+            "confidence": 0.80,
+            "category": "evidence_conflict",
+            "classification": "CONTRADICTION",
+            "referenced_evidence_ids": evidence_ids,
+            "referenced_event_ids": event_ids[:10],
+            "supporting_entities": [f"location:{loc}" for loc in set(locations)],
+            "related_entities": list(set(locations)),
+        })
+
+    # 5. UNKNOWN Findings: Missing context
+    if unverified_evs or len(extracted_entities) < 2:
+        fnd_id = f"FND-{case_id}-{uuid.uuid4().hex[:6].upper()}"
+        findings_list.append({
+            "finding_id": fnd_id,
+            "title": "Unresolved Context: Additional Ingestion Required",
+            "description": "Available evidence does not yet establish full corroboration for all identified entities. Gaps remain in chronological coverage.",
+            "confidence": 0.90,
+            "category": "information_gap",
+            "classification": "UNKNOWN",
+            "referenced_evidence_ids": [ev.get("id") for ev in unverified_evs] if unverified_evs else evidence_ids,
+            "referenced_event_ids": [],
+            "supporting_entities": [],
+            "related_entities": [],
+        })
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     logs.append({

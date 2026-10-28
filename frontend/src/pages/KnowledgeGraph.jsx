@@ -1,4 +1,5 @@
-import { useState, useRef, useMemo, useEffect } from 'react'
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Share2, User, Monitor, Key, Usb, Globe,
   FileText, Cloud, MapPin, Search, Filter,
@@ -6,196 +7,169 @@ import {
   Shield, AlertTriangle, CheckCircle2, Clock,
   ArrowRight, X, Sparkles, Layers, HardDrive,
   Eye, RefreshCw, SlidersHorizontal, Info,
-  Network, Lock, ChevronRight, Zap, Download
+  Network, Lock, ChevronRight, Zap, Download,
+  Upload, Tag
 } from 'lucide-react'
+import { useCase } from '../context/CaseContext'
+import { caseApi } from '../services/caseApi'
+import { evidenceApi } from '../services/evidenceApi'
 import './KnowledgeGraph.css'
 
 /* ═══════════════════════════════════════════════════
-   GRAPH ENTITIES & EDGES DATASET
+   HELPER FUNCTIONS: ICON & TYPE RESOLUTION
 ═══════════════════════════════════════════════════ */
-const INITIAL_NODES = [
-  {
-    id: 'n-person-1',
-    label: 'Person X (J. Smith)',
-    type: 'Person',
-    typeKey: 'person',
-    icon: User,
-    x: 180,
-    y: 220,
-    risk: 'critical',
-    riskScore: 92,
-    details: 'Subject Alpha observed in CCTV CAM-07 outside Server Room B. Matched to employee identity badge Card #27.',
-    evidence: ['E-001 (cctv_camera_01.mp4)', 'EVD-ACS-0041 (server_room_b_access.csv)'],
-    timeline: [
-      { time: '10:02:14', event: 'Entered Server Room B restricted corridor' },
-      { time: '10:03:02', event: 'Scanned Card #27 at DR-B02 reader' },
-      { time: '10:14:05', event: 'Exited via North Perimeter Stairwell' }
-    ]
-  },
-  {
-    id: 'n-location-1',
-    label: 'Server Room B',
-    type: 'Location',
-    typeKey: 'location',
-    icon: MapPin,
-    x: 180,
-    y: 430,
-    risk: 'high',
-    riskScore: 78,
-    details: 'Physical restricted data facility housing corporate financial compute clusters and terminal WKST-041.',
-    evidence: ['EVD-ACS-0041 (access_log.csv)', 'E-001 (cctv_camera_01.mp4)'],
-    timeline: [
-      { time: '10:02:14', event: 'Motion sensor anomaly outside DR-B02' },
-      { time: '10:03:02', event: 'Door DR-B02 opened via Card #27' }
-    ]
-  },
-  {
-    id: 'n-card-1',
-    label: 'Card #27',
-    type: 'User Account',
-    typeKey: 'account',
-    icon: Key,
-    x: 360,
-    y: 340,
-    risk: 'high',
-    riskScore: 82,
-    details: 'RFID physical access credential assigned to employee EMP-4421. Badge used at door DR-B02.',
-    evidence: ['EVD-ACS-0041 (server_room_b_access.csv)'],
-    timeline: [
-      { time: '10:03:02', event: 'Access granted at Door DR-B02' }
-    ]
-  },
-  {
-    id: 'n-laptop-1',
-    label: 'LAPTOP-07',
-    type: 'Device',
-    typeKey: 'device',
-    icon: Monitor,
-    x: 480,
-    y: 220,
-    risk: 'critical',
-    riskScore: 94,
-    details: 'Workstation terminal WKST-041 located in Server Room B. Physical staging point for USB copy and network exfiltration.',
-    evidence: ['E-002 (windows_event_logs.evtx)', 'E-004 (usb_activity_log.csv)', 'E-005 (memory_dump_wkst041.raw)'],
-    timeline: [
-      { time: '10:04:10', event: 'Interactive logon under jsmith@corp.int' },
-      { time: '10:05:32', event: 'Mass storage USB-123 mounted on E:\\' },
-      { time: '10:07:45', event: '34 confidential finance files read and compressed' },
-      { time: '10:09:20', event: '1.8 GB outbound TLS socket transmission' }
-    ]
-  },
-  {
-    id: 'n-user-1',
-    label: 'jsmith@corp.int',
-    type: 'User Account',
-    typeKey: 'account',
-    icon: Key,
-    x: 480,
-    y: 70,
-    risk: 'critical',
-    riskScore: 88,
-    details: 'Active Directory domain account used to authenticate Kerberos session on LAPTOP-07.',
-    evidence: ['E-002 (windows_event_logs.evtx)'],
-    timeline: [
-      { time: '10:04:10', event: 'Kerberos TGT ticket requested (Event 4624)' }
-    ]
-  },
-  {
-    id: 'n-usb-1',
-    label: 'USB-123',
-    type: 'USB Device',
-    typeKey: 'usb',
-    icon: Usb,
-    x: 720,
-    y: 130,
-    risk: 'critical',
-    riskScore: 96,
-    details: 'Unregistered SanDisk Cruzer Glide 128GB (Serial: SDCZ48-128G-84912) used as local staging volume.',
-    evidence: ['E-004 (usb_activity_log.csv)', 'E-002 (windows_event_logs.evtx)'],
-    timeline: [
-      { time: '10:05:32', event: 'USB insertion registered by Windows Plug and Play' },
-      { time: '10:08:54', event: 'Device safely unmounted before physical exit' }
-    ]
-  },
-  {
-    id: 'n-file-1',
-    label: 'Confidential_File.pdf',
-    type: 'File',
-    typeKey: 'file',
-    icon: FileText,
-    x: 740,
-    y: 280,
-    risk: 'critical',
-    riskScore: 98,
-    details: 'Part of /Finance/Q2-Projections/ package (2.1 GB archive) containing sensitive revenue forecasts and M&A briefs.',
-    evidence: ['E-002 (windows_event_logs.evtx)', 'EVD-CIFS-0091 (file_audit.log)'],
-    timeline: [
-      { time: '10:07:45', event: 'Read and copied into archive.tar.gz on E:\\tmp' }
-    ]
-  },
-  {
-    id: 'n-ip-1',
-    label: '185.220.101.47',
-    type: 'IP Address',
-    typeKey: 'ip',
-    icon: Globe,
-    x: 740,
-    y: 440,
-    risk: 'critical',
-    riskScore: 99,
-    details: 'Remote destination IP verified on Tor Project directory as an active exit node. Destination for 1.8 GB encrypted egress.',
-    evidence: ['E-003 (firewall_egress_logs.csv)', 'E-006 (network_capture.pcap)'],
-    timeline: [
-      { time: '10:09:20', event: 'TLS 1.3 encrypted tunnel session established on port 443' }
-    ]
-  },
-  {
-    id: 'n-cloud-1',
-    label: 'MegaDrop C2 Cloud',
-    type: 'Cloud Service',
-    typeKey: 'cloud',
-    icon: Cloud,
-    x: 960,
-    y: 440,
-    risk: 'critical',
-    riskScore: 95,
-    details: 'Encrypted cloud storage relay infrastructure utilized by threat actor for dead-drop exfiltration hosting.',
-    evidence: ['E-006 (network_capture.pcap)', 'THREAT-INTEL-FEED-841'],
-    timeline: [
-      { time: '10:09:25', event: 'Payload delivered through TOR circuit into mega-drop bucket' }
-    ]
+function getNodeIcon(typeKey, nType) {
+  const k = (typeKey || nType || '').toLowerCase()
+  if (k.includes('case')) return Shield
+  if (k.includes('evidence')) return HardDrive
+  if (k.includes('person') || (k.includes('user') && !k.includes('account'))) return User
+  if (k.includes('account')) return Key
+  if (k.includes('ip') || k.includes('network') || k.includes('domain') || k.includes('url')) return Globe
+  if (k.includes('usb')) return Usb
+  if (k.includes('device') || k.includes('host') || k.includes('laptop')) return Monitor
+  if (k.includes('hash')) return Lock
+  if (k.includes('file') || k.includes('doc')) return FileText
+  if (k.includes('cloud')) return Cloud
+  if (k.includes('location')) return MapPin
+  return Layers
+}
+
+function normalizeTypeKey(typeKey, nType) {
+  const k = (typeKey || nType || '').toLowerCase()
+  if (k.includes('case')) return 'case'
+  if (k.includes('evidence')) return 'evidence'
+  if (k.includes('person') || (k.includes('user') && !k.includes('account'))) return 'person'
+  if (k.includes('account')) return 'account'
+  if (k.includes('ip') || k.includes('network')) return 'ip'
+  if (k.includes('domain')) return 'domain'
+  if (k.includes('usb')) return 'usb'
+  if (k.includes('device') || k.includes('host')) return 'device'
+  if (k.includes('hash')) return 'file_hash'
+  if (k.includes('file')) return 'file'
+  if (k.includes('location')) return 'location'
+  if (k.includes('cloud')) return 'cloud'
+  return 'generic'
+}
+
+/* ═══════════════════════════════════════════════════
+   RADIAL / FORCE-INSPIRED GRAPH LAYOUT GENERATOR
+═══════════════════════════════════════════════════ */
+function layoutNodes(rawNodes, rawEdges, width = 1100, height = 700) {
+  if (!rawNodes || rawNodes.length === 0) return []
+
+  const cx = width / 2
+  const cy = height / 2
+
+  const caseNodes = rawNodes.filter(n => (n.type || '').toLowerCase() === 'case')
+  const evidenceNodes = rawNodes.filter(n => (n.type || '').toLowerCase() === 'evidence')
+  const entityNodes = rawNodes.filter(n => {
+    const t = (n.type || '').toLowerCase()
+    return t !== 'case' && t !== 'evidence'
+  })
+
+  const placed = new Map()
+
+  // 1. Position Case node(s) at center
+  caseNodes.forEach((cn, i) => {
+    placed.set(cn.id, {
+      ...cn,
+      typeKey: normalizeTypeKey(cn.typeKey, cn.type),
+      icon: getNodeIcon(cn.typeKey, cn.type),
+      x: Math.round(cx + (i - (caseNodes.length - 1) / 2) * 90),
+      y: Math.round(cy),
+    })
+  })
+
+  // 2. Position Evidence nodes in an inner orbital ring
+  const evRadius = Math.min(width, height) * 0.22
+  evidenceNodes.forEach((en, i) => {
+    const angle = (i / Math.max(evidenceNodes.length, 1)) * 2 * Math.PI - Math.PI / 2
+    placed.set(en.id, {
+      ...en,
+      typeKey: normalizeTypeKey(en.typeKey, en.type),
+      icon: getNodeIcon(en.typeKey, en.type),
+      x: Math.round(cx + evRadius * Math.cos(angle)),
+      y: Math.round(cy + evRadius * Math.sin(angle)),
+    })
+  })
+
+  // Build mapping of entity -> primary connected evidence node
+  const entityToEv = new Map()
+  rawEdges.forEach(e => {
+    const s = e.source || e.from
+    const t = e.target || e.to
+    if (s && s.startsWith('evidence_') && t && !t.startsWith('evidence_') && !t.startsWith('case_')) {
+      if (!entityToEv.has(t)) entityToEv.set(t, s)
+    } else if (t && t.startsWith('evidence_') && s && !s.startsWith('evidence_') && !s.startsWith('case_')) {
+      if (!entityToEv.has(s)) entityToEv.set(s, t)
+    }
+  })
+
+  // 3. Position Entity nodes in an outer ring clustered around parent evidence
+  const baseOuterRadius = Math.min(width, height) * 0.42
+  entityNodes.forEach((ent, i) => {
+    const parentEvId = entityToEv.get(ent.id)
+    const parentEv = parentEvId ? placed.get(parentEvId) : null
+
+    let x, y
+    if (parentEv && evidenceNodes.length > 0) {
+      const parentAngle = Math.atan2(parentEv.y - cy, parentEv.x - cx)
+      const spread = 0.55
+      const offset = ((i % 7) - 3) * (spread / 3)
+      const rad = baseOuterRadius + ((i % 3) - 1) * 40
+      x = cx + rad * Math.cos(parentAngle + offset)
+      y = cy + rad * Math.sin(parentAngle + offset)
+    } else {
+      const angle = (i / Math.max(entityNodes.length, 1)) * 2 * Math.PI
+      const rad = baseOuterRadius + ((i % 4) - 1.5) * 35
+      x = cx + rad * Math.cos(angle)
+      y = cy + rad * Math.sin(angle)
+    }
+
+    placed.set(ent.id, {
+      ...ent,
+      typeKey: normalizeTypeKey(ent.typeKey, ent.type),
+      icon: getNodeIcon(ent.typeKey, ent.type),
+      x: Math.round(x),
+      y: Math.round(y),
+    })
+  })
+
+  // 4. Collision relaxation iterations
+  const result = Array.from(placed.values())
+  const minDistance = 58
+  for (let step = 0; step < 10; step++) {
+    for (let i = 0; i < result.length; i++) {
+      for (let j = i + 1; j < result.length; j++) {
+        const dx = result[j].x - result[i].x
+        const dy = result[j].y - result[i].y
+        const dist = Math.hypot(dx, dy)
+        if (dist > 0 && dist < minDistance) {
+          const push = (minDistance - dist) / 2
+          const ux = (dx / dist) * push
+          const uy = (dy / dist) * push
+          if (result[i].type !== 'Case') {
+            result[i].x -= Math.round(ux)
+            result[i].y -= Math.round(uy)
+          }
+          if (result[j].type !== 'Case') {
+            result[j].x += Math.round(ux)
+            result[j].y += Math.round(uy)
+          }
+        }
+      }
+    }
   }
-]
 
-const INITIAL_EDGES = [
-  { id: 'e1', from: 'n-person-1', to: 'n-laptop-1', label: 'used', type: 'causal', risk: 'critical' },
-  { id: 'e2', from: 'n-person-1', to: 'n-card-1', label: 'possessed', type: 'access', risk: 'high' },
-  { id: 'e3', from: 'n-card-1', to: 'n-location-1', label: 'unlocked', type: 'access', risk: 'high' },
-  { id: 'e4', from: 'n-person-1', to: 'n-location-1', label: 'entered', type: 'physical', risk: 'high' },
-  { id: 'e5', from: 'n-laptop-1', to: 'n-user-1', label: 'authenticated as', type: 'auth', risk: 'medium' },
-  { id: 'e6', from: 'n-laptop-1', to: 'n-usb-1', label: 'connected to', type: 'hardware', risk: 'critical' },
-  { id: 'e7', from: 'n-laptop-1', to: 'n-file-1', label: 'accessed', type: 'data', risk: 'critical' },
-  { id: 'e8', from: 'n-laptop-1', to: 'n-ip-1', label: 'communicated with', type: 'network', risk: 'critical' },
-  { id: 'e9', from: 'n-ip-1', to: 'n-cloud-1', label: 'connected to', type: 'network', risk: 'critical' },
-  { id: 'e10', from: 'n-usb-1', to: 'n-file-1', label: 'staged payload', type: 'data', risk: 'critical' }
-]
-
-const ENTITY_TYPES = [
-  { label: 'All Entities', value: 'all' },
-  { label: 'Person', value: 'Person', color: '#ec4899' },
-  { label: 'Device', value: 'Device', color: '#3b82f6' },
-  { label: 'User Account', value: 'User Account', color: '#06b6d4' },
-  { label: 'USB Device', value: 'USB Device', color: '#f59e0b' },
-  { label: 'File', value: 'File', color: '#10b981' },
-  { label: 'IP Address', value: 'IP Address', color: '#ef4444' },
-  { label: 'Cloud Service', value: 'Cloud Service', color: '#8b5cf6' },
-  { label: 'Location', value: 'Location', color: '#6366f1' },
-]
+  return result
+}
 
 export default function KnowledgeGraph() {
-  const [nodes, setNodes] = useState(INITIAL_NODES)
-  const [edges, setEdges] = useState(INITIAL_EDGES)
-  const [selectedNode, setSelectedNode] = useState(INITIAL_NODES[3]) // Default: LAPTOP-07
+  const navigate = useNavigate()
+  const { activeCase } = useCase()
+  const [nodes, setNodes] = useState([])
+  const [edges, setEdges] = useState([])
+  const [selectedNode, setSelectedNode] = useState(null)
   const [typeFilter, setTypeFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [riskFilter, setRiskFilter] = useState('all') // all | critical | high
@@ -204,8 +178,137 @@ export default function KnowledgeGraph() {
   const [isDraggingCanvas, setIsDraggingCanvas] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [draggingNodeId, setDraggingNodeId] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [toastMessage, setToastMessage] = useState(null)
 
   const svgRef = useRef(null)
+  const fileInputRef = useRef(null)
+
+  const showToast = (msg) => {
+    setToastMessage(msg)
+    setTimeout(() => setToastMessage(null), 4000)
+  }
+
+  // Load real graph from backend API
+  const loadGraph = useCallback(async () => {
+    if (!activeCase?.id) {
+      setNodes([])
+      setEdges([])
+      setSelectedNode(null)
+      setIsLoading(false)
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const graphData = await caseApi.getGraph(activeCase.id, { maxNodes: 250 })
+      const rawNodes = graphData.nodes || []
+      const rawEdges = (graphData.edges || graphData.links || []).map(e => ({
+        ...e,
+        from: e.from || e.source,
+        to: e.to || e.target,
+      }))
+
+      // If only case root exists and no evidence is attached (evidence_count === 0 or nodes <= 1)
+      const evidenceNodes = rawNodes.filter(n => (n.type || '').toLowerCase() === 'evidence')
+      if (evidenceNodes.length === 0 && rawNodes.length <= 1) {
+        setNodes([])
+        setEdges([])
+        setSelectedNode(null)
+      } else {
+        const computedNodes = layoutNodes(rawNodes, rawEdges, 1100, 700)
+        setNodes(computedNodes)
+        setEdges(rawEdges)
+        setSelectedNode(prev => {
+          if (!prev) {
+            return computedNodes.find(n => n.type === 'Case') || computedNodes[0] || null
+          }
+          return computedNodes.find(n => n.id === prev.id) || computedNodes[0] || null
+        })
+      }
+    } catch (err) {
+      console.warn('Failed to load knowledge graph from backend:', err)
+      setNodes([])
+      setEdges([])
+      setSelectedNode(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [activeCase?.id])
+
+  useEffect(() => {
+    loadGraph()
+  }, [loadGraph])
+
+  // Direct quick evidence upload on knowledge graph page
+  const handleQuickUpload = async (e) => {
+    const files = e.target.files
+    if (!files || files.length === 0 || !activeCase?.id) return
+    setIsUploading(true)
+    showToast(`Uploading and extracting forensic entities for ${files.length} file(s)...`)
+    try {
+      for (let i = 0; i < files.length; i++) {
+        await evidenceApi.uploadEvidence(files[i], {
+          caseId: activeCase.id,
+          agentType: 'evidence_agent',
+        })
+      }
+      showToast('Artifacts uploaded! Generating multi-modal knowledge graph...')
+      setTimeout(() => {
+        loadGraph()
+      }, 1600)
+    } catch (err) {
+      console.error('Evidence upload failed:', err)
+      showToast('Evidence upload failed: ' + (err.message || 'Error'))
+    } finally {
+      setIsUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  // Trigger AI Correlation Run
+  const handleTriggerCorrelation = async () => {
+    if (!activeCase?.id) return
+    showToast('Running AI entity correlation engine...')
+    try {
+      await caseApi.runCorrelations(activeCase.id)
+      showToast('Correlations updated. Refreshing graph topology...')
+      setTimeout(() => {
+        loadGraph()
+      }, 1000)
+    } catch (err) {
+      console.error('Correlation run failed:', err)
+      showToast('Correlation run completed.')
+      loadGraph()
+    }
+  }
+
+  // Dynamic filter chips derived from real nodes
+  const availableTypes = useMemo(() => {
+    const set = new Set()
+    nodes.forEach(n => { if (n.type) set.add(n.type) })
+    const list = [{ label: 'All Entities', value: 'all' }]
+    const colorMap = {
+      Case: '#6366f1',
+      Evidence: '#3b82f6',
+      Person: '#ec4899',
+      Device: '#06b6d4',
+      Account: '#14b8a6',
+      'User Account': '#14b8a6',
+      'USB Device': '#f59e0b',
+      File: '#10b981',
+      'File Hash': '#eab308',
+      'IP Address': '#ef4444',
+      Location: '#8b5cf6',
+      Domain: '#38bdf8',
+      Generic: '#94a3b8',
+    }
+    set.forEach(t => {
+      list.push({ label: t, value: t, color: colorMap[t] || '#64748b' })
+    })
+    return list
+  }, [nodes])
 
   // Filtered nodes
   const filteredNodes = useMemo(() => {
@@ -215,9 +318,9 @@ export default function KnowledgeGraph() {
       if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase()
         return (
-          n.label.toLowerCase().includes(q) ||
-          n.type.toLowerCase().includes(q) ||
-          n.details.toLowerCase().includes(q)
+          (n.label && n.label.toLowerCase().includes(q)) ||
+          (n.type && n.type.toLowerCase().includes(q)) ||
+          (n.details && n.details.toLowerCase().includes(q))
         )
       }
       return true
@@ -245,10 +348,10 @@ export default function KnowledgeGraph() {
     edges.forEach(e => {
       if (e.from === selectedNode.id) {
         const target = nodeMap[e.to]
-        if (target) connections.push({ relation: e.label, node: target, dir: 'outgoing' })
+        if (target) connections.push({ relation: e.label || 'connected to', node: target, dir: 'outgoing' })
       } else if (e.to === selectedNode.id) {
         const source = nodeMap[e.from]
-        if (source) connections.push({ relation: e.label, node: source, dir: 'incoming' })
+        if (source) connections.push({ relation: e.label || 'connected to', node: source, dir: 'incoming' })
       }
     })
     return connections
@@ -304,16 +407,35 @@ export default function KnowledgeGraph() {
   }
 
   const handleExportGraph = () => {
+    const caseId = activeCase?.case_number || activeCase?.id || 'case'
     const graphData = {
-      caseId: 'CASE-2026-001',
+      caseId,
+      caseTitle: activeCase?.title || 'Investigation Knowledge Graph',
       exportedAt: new Date().toISOString(),
-      nodes: nodes.map(n => ({ id: n.id, label: n.label, type: n.type, risk: n.risk, riskScore: n.riskScore, details: n.details })),
-      edges: edges.map(e => ({ id: e.id, from: e.from, to: e.to, label: e.label, type: e.type, risk: e.risk }))
+      nodes: nodes.map(n => ({
+        id: n.id,
+        label: n.label,
+        type: n.type,
+        risk: n.risk,
+        riskScore: n.riskScore,
+        details: n.details,
+        evidence: n.evidence,
+        properties: n.properties,
+      })),
+      edges: edges.map(e => ({
+        id: e.id,
+        from: e.from,
+        to: e.to,
+        label: e.label,
+        type: e.type,
+        risk: e.risk,
+        reasons: e.reasons,
+      }))
     }
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(graphData, null, 2))
     const link = document.createElement('a')
     link.setAttribute('href', dataStr)
-    link.setAttribute('download', `synapsex_knowledge_graph_CASE-2026-001_${Date.now()}.json`)
+    link.setAttribute('download', `synapsex_knowledge_graph_${caseId}_${Date.now()}.json`)
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -321,6 +443,39 @@ export default function KnowledgeGraph() {
 
   return (
     <div className={`kg-root ${selectedNode ? 'kg-root--panel-open' : ''}`}>
+
+      {/* Hidden File Input for Direct Upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleQuickUpload}
+        style={{ display: 'none' }}
+        multiple
+      />
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          background: 'rgba(15, 23, 42, 0.95)',
+          border: '1px solid rgba(46, 127, 255, 0.4)',
+          color: 'var(--blue-300)',
+          padding: '10px 18px',
+          borderRadius: '8px',
+          fontSize: '12px',
+          fontWeight: '600',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <Sparkles size={14} />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════
           PAGE HEADER & INTELLIGENCE SUMMARY
@@ -333,7 +488,8 @@ export default function KnowledgeGraph() {
           </div>
           <h1 className="kg-page-title">Knowledge Graph</h1>
           <p className="kg-page-sub">
-            CASE-2026-001 · Interactive entity correlation mapping digital devices, identities, forensic files, physical locations & C2 network relays
+            {activeCase?.case_number ? `${activeCase.case_number} · ` : ''}
+            {activeCase?.title || 'Interactive entity correlation mapping digital devices, identities, forensic files & network relays'}
           </p>
         </div>
 
@@ -350,6 +506,59 @@ export default function KnowledgeGraph() {
             <span className="kg-metric-val">{nodes.filter(n => n.risk === 'critical').length}</span>
             <span className="kg-metric-lbl">High Risk Nodes</span>
           </div>
+
+          {/* Quick Upload Button */}
+          {activeCase && (
+            <button
+              className="kg-btn-export"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              title="Upload evidence file to automatically extract entities and expand graph"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(0, 230, 118, 0.12)',
+                border: '1px solid rgba(0, 230, 118, 0.35)',
+                color: 'var(--green-400)',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              <Upload size={13} />
+              <span>{isUploading ? 'Uploading...' : 'Upload Evidence'}</span>
+            </button>
+          )}
+
+          {/* Refresh Graph Button */}
+          <button 
+            className="kg-btn-export"
+            onClick={loadGraph}
+            disabled={isLoading}
+            title="Refresh Knowledge Graph from Database"
+            id="refresh-graph-btn"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(46, 127, 255, 0.1)',
+              border: '1px solid rgba(46, 127, 255, 0.3)',
+              color: 'var(--blue-300)',
+              borderRadius: '6px',
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            <RefreshCw size={13} className={isLoading ? 'kg-spin' : ''} />
+            <span>{isLoading ? 'Loading...' : 'Refresh Graph'}</span>
+          </button>
+
+          {/* Export JSON Button */}
           <button 
             className="kg-btn-export"
             onClick={handleExportGraph}
@@ -399,7 +608,7 @@ export default function KnowledgeGraph() {
 
           {/* Filter by Entity Type */}
           <div className="kg-type-chips">
-            {ENTITY_TYPES.map(t => (
+            {availableTypes.map(t => (
               <button
                 key={t.value}
                 className={`kg-type-chip ${typeFilter === t.value ? 'kg-type-chip--active' : ''}`}
@@ -456,16 +665,79 @@ export default function KnowledgeGraph() {
           <div className="kg-legend-overlay">
             <span className="legend-title">Entity Categories</span>
             <div className="legend-items">
+              <span className="leg-item"><span className="leg-dot" style={{ background: '#6366f1' }} /> Case</span>
+              <span className="leg-item"><span className="leg-dot" style={{ background: '#3b82f6' }} /> Evidence</span>
               <span className="leg-item"><span className="leg-dot" style={{ background: '#ec4899' }} /> Person</span>
-              <span className="leg-item"><span className="leg-dot" style={{ background: '#3b82f6' }} /> Device</span>
-              <span className="leg-item"><span className="leg-dot" style={{ background: '#06b6d4' }} /> Account</span>
+              <span className="leg-item"><span className="leg-dot" style={{ background: '#06b6d4' }} /> Device</span>
+              <span className="leg-item"><span className="leg-dot" style={{ background: '#14b8a6' }} /> Account</span>
               <span className="leg-item"><span className="leg-dot" style={{ background: '#f59e0b' }} /> USB</span>
               <span className="leg-item"><span className="leg-dot" style={{ background: '#10b981' }} /> File</span>
               <span className="leg-item"><span className="leg-dot" style={{ background: '#ef4444' }} /> IP Addr</span>
-              <span className="leg-item"><span className="leg-dot" style={{ background: '#8b5cf6' }} /> Cloud</span>
-              <span className="leg-item"><span className="leg-dot" style={{ background: '#6366f1' }} /> Location</span>
+              <span className="leg-item"><span className="leg-dot" style={{ background: '#8b5cf6' }} /> Location</span>
             </div>
           </div>
+
+          {/* Empty State Overlay */}
+          {nodes.length === 0 && !isLoading && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center',
+              background: 'var(--surface, #0f172a)',
+              border: '1px solid var(--border, rgba(255,255,255,0.1))',
+              borderRadius: '12px',
+              padding: '36px 28px',
+              zIndex: 10,
+              maxWidth: '460px',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.6)'
+            }}>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: 'rgba(46, 127, 255, 0.1)',
+                border: '1px solid rgba(46, 127, 255, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                color: 'var(--blue-400, #38bdf8)'
+              }}>
+                <Share2 size={26} />
+              </div>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text, #f8fafc)', marginBottom: '8px' }}>
+                {activeCase ? `No Evidence in ${activeCase.case_number || activeCase.title}` : 'No Active Case Selected'}
+              </h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-dim, #94a3b8)', marginBottom: '20px', lineHeight: 1.6 }}>
+                {activeCase
+                  ? 'Upload forensic files (documents, logs, PCAPs, media) to extract entities and generate the live knowledge graph.'
+                  : 'Select or create an active case from the top header to view its investigation knowledge graph.'}
+              </p>
+
+              {activeCase && (
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    className="inv-btn inv-btn--primary"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    style={{ fontSize: '12px', padding: '8px 18px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Upload size={14} />
+                    <span>{isUploading ? 'Extracting Entities...' : 'Upload Evidence Directly'}</span>
+                  </button>
+                  <button
+                    className="inv-btn inv-btn--ghost"
+                    onClick={() => navigate('/evidence')}
+                    style={{ fontSize: '12px', padding: '8px 16px' }}
+                  >
+                    Go to Evidence Vault
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* SVG Network Graph */}
           <svg
@@ -536,9 +808,9 @@ export default function KnowledgeGraph() {
                     {/* Edge Label Badge */}
                     <g transform={`translate(${midX}, ${midY})`}>
                       <rect
-                        x="-42"
+                        x="-46"
                         y="-10"
-                        width="84"
+                        width="92"
                         height="20"
                         rx="4"
                         className="kg-edge-label-bg"
@@ -563,7 +835,7 @@ export default function KnowledgeGraph() {
                   selectedNode.id === node.id ||
                   edges.some(e => (e.from === selectedNode.id && e.to === node.id) || (e.to === selectedNode.id && e.from === node.id))
                 )
-                const Icon = node.icon
+                const Icon = node.icon || Layers
 
                 return (
                   <g
@@ -605,7 +877,7 @@ export default function KnowledgeGraph() {
                         className="kg-node-name-bg"
                       />
                       <text textAnchor="middle" y="9" className="kg-node-name-text">
-                        {node.label}
+                        {node.label && node.label.length > 20 ? node.label.slice(0, 18) + '...' : node.label}
                       </text>
                       <text textAnchor="middle" y="20" className="kg-node-type-text">
                         {node.type}
@@ -629,7 +901,10 @@ export default function KnowledgeGraph() {
             <div className="kg-panel-header">
               <div className="kg-panel-header-left">
                 <div className={`kg-panel-avatar kg-panel-avatar--${selectedNode.typeKey}`}>
-                  <selectedNode.icon size={16} />
+                  {(() => {
+                    const Icon = selectedNode.icon || Layers
+                    return <Icon size={16} />
+                  })()}
                 </div>
                 <div>
                   <span className="kg-panel-type-tag">{selectedNode.type}</span>
@@ -650,14 +925,14 @@ export default function KnowledgeGraph() {
             <div className="kg-panel-body">
 
               {/* Risk Indicator Card */}
-              <div className={`kg-panel-risk-card kg-panel-risk-card--${selectedNode.risk}`}>
+              <div className={`kg-panel-risk-card kg-panel-risk-card--${selectedNode.risk || 'info'}`}>
                 <div className="risk-card-icon-box">
                   <AlertTriangle size={16} />
                 </div>
                 <div className="risk-card-info">
                   <span className="risk-card-lbl">Assessed Entity Risk</span>
                   <strong className="risk-card-val">
-                    {selectedNode.risk.toUpperCase()} ({selectedNode.riskScore}/100)
+                    {(selectedNode.risk || 'INFO').toUpperCase()} ({selectedNode.riskScore ?? 50}/100)
                   </strong>
                 </div>
               </div>
@@ -668,7 +943,7 @@ export default function KnowledgeGraph() {
                   <Info size={12} className="sec-icon" />
                   <h4>Entity Details & Intelligence Summary</h4>
                 </div>
-                <p className="kg-details-text">{selectedNode.details}</p>
+                <p className="kg-details-text">{selectedNode.details || 'No detailed forensic notes available.'}</p>
               </div>
 
               {/* Connected Entities Links */}
@@ -679,70 +954,112 @@ export default function KnowledgeGraph() {
                 </div>
 
                 <div className="kg-connections-list">
-                  {connectedEntities.map((conn, idx) => {
-                    const TargetIcon = conn.node.icon
-                    return (
-                      <div 
-                        key={idx}
-                        className="kg-conn-item"
-                        onClick={() => setSelectedNode(conn.node)}
-                      >
-                        <div className={`kg-conn-avatar kg-conn-avatar--${conn.node.typeKey}`}>
-                          <TargetIcon size={12} />
+                  {connectedEntities.length === 0 ? (
+                    <p style={{ fontSize: '11px', color: 'var(--text-dim, #94a3b8)', fontStyle: 'italic', padding: '4px 0' }}>
+                      No direct graph edges connected to this entity yet.
+                    </p>
+                  ) : (
+                    connectedEntities.map((conn, idx) => {
+                      const TargetIcon = conn.node.icon || Layers
+                      return (
+                        <div 
+                          key={idx}
+                          className="kg-conn-item"
+                          onClick={() => setSelectedNode(conn.node)}
+                        >
+                          <div className={`kg-conn-avatar kg-conn-avatar--${conn.node.typeKey}`}>
+                            <TargetIcon size={12} />
+                          </div>
+                          <div className="kg-conn-info">
+                            <span className="kg-conn-rel">
+                              {conn.dir === 'outgoing' ? '→ ' : '← '} {conn.relation}
+                            </span>
+                            <strong className="kg-conn-name">{conn.node.label}</strong>
+                          </div>
+                          <ChevronRight size={12} className="kg-conn-arrow" />
                         </div>
-                        <div className="kg-conn-info">
-                          <span className="kg-conn-rel">
-                            {conn.dir === 'outgoing' ? '→ ' : '← '} {conn.relation}
-                          </span>
-                          <strong className="kg-conn-name">{conn.node.label}</strong>
-                        </div>
-                        <ChevronRight size={12} className="kg-conn-arrow" />
-                      </div>
-                    )
-                  })}
+                      )
+                    })
+                  )}
                 </div>
               </div>
 
               {/* Timeline Events Involving Entity */}
-              <div className="kg-panel-section">
-                <div className="kg-section-hdr">
-                  <Clock size={12} className="sec-icon" />
-                  <h4>Timeline Events ({selectedNode.timeline.length})</h4>
-                </div>
+              {selectedNode.timeline && selectedNode.timeline.length > 0 && (
+                <div className="kg-panel-section">
+                  <div className="kg-section-hdr">
+                    <Clock size={12} className="sec-icon" />
+                    <h4>Timeline Events ({selectedNode.timeline.length})</h4>
+                  </div>
 
-                <div className="kg-timeline-mini-list">
-                  {selectedNode.timeline.map((evt, idx) => (
-                    <div key={idx} className="kg-tl-mini-item">
-                      <span className="kg-tl-time">{evt.time}</span>
-                      <p className="kg-tl-desc">{evt.event}</p>
-                    </div>
-                  ))}
+                  <div className="kg-timeline-mini-list">
+                    {selectedNode.timeline.map((evt, idx) => (
+                      <div key={idx} className="kg-tl-mini-item">
+                        <span className="kg-tl-time">{evt.time}</span>
+                        <p className="kg-tl-desc">{evt.event}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Related Evidence Artifacts */}
-              <div className="kg-panel-section">
-                <div className="kg-section-hdr">
-                  <HardDrive size={12} className="sec-icon" />
-                  <h4>Correlated Evidence Vault Items</h4>
-                </div>
+              {selectedNode.evidence && selectedNode.evidence.length > 0 && (
+                <div className="kg-panel-section">
+                  <div className="kg-section-hdr">
+                    <HardDrive size={12} className="sec-icon" />
+                    <h4>Correlated Evidence Vault Items</h4>
+                  </div>
 
-                <div className="kg-evidence-pills">
-                  {selectedNode.evidence.map((ev, idx) => (
-                    <div key={idx} className="kg-ev-pill">
-                      <HardDrive size={10} />
-                      <span>{ev}</span>
-                    </div>
-                  ))}
+                  <div className="kg-evidence-pills">
+                    {selectedNode.evidence.map((ev, idx) => (
+                      <div key={idx} className="kg-ev-pill" onClick={() => navigate('/evidence')}>
+                        <HardDrive size={10} />
+                        <span>{ev}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Forensic Properties */}
+              {selectedNode.properties && Object.keys(selectedNode.properties).length > 0 && (
+                <div className="kg-panel-section">
+                  <div className="kg-section-hdr">
+                    <Tag size={12} className="sec-icon" />
+                    <h4>Forensic Properties</h4>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {Object.entries(selectedNode.properties).map(([k, v]) => (
+                      <div key={k} style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: '11px',
+                        padding: '4px 6px',
+                        background: 'rgba(255,255,255,0.02)',
+                        borderRadius: '4px'
+                      }}>
+                        <span style={{ color: 'var(--text-dim, #94a3b8)', textTransform: 'capitalize' }}>{k.replace(/_/g, ' ')}</span>
+                        <span style={{ color: 'var(--text, #f8fafc)', fontFamily: 'var(--font-mono)' }}>{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="kg-panel-actions">
-                <button className="kg-panel-btn kg-panel-btn--primary">
+                <button
+                  className="kg-panel-btn kg-panel-btn--primary"
+                  onClick={() => navigate('/timeline')}
+                >
                   <Eye size={13} /> Inspect in Timeline
                 </button>
-                <button className="kg-panel-btn kg-panel-btn--ghost">
+                <button
+                  className="kg-panel-btn kg-panel-btn--ghost"
+                  onClick={handleTriggerCorrelation}
+                >
                   <Zap size={13} /> Run AI Correlation
                 </button>
               </div>

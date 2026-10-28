@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import './AIAgents.css'
 import { evidenceApi } from '../services/evidenceApi'
+import { useCase } from '../context/CaseContext'
 
 /* ═══════════════════════════════════════════════════
    MULTI-AGENT FLEET DEFINITIONS WITH FUNCTIONAL ROLES
@@ -572,6 +573,7 @@ function generateMockSha256(filename, size) {
 }
 
 export default function AIAgents() {
+  const { cases, activeCase } = useCase()
   const [agents, setAgents] = useState(INITIAL_AGENTS)
   const [selectedAgent, setSelectedAgent] = useState(INITIAL_AGENTS[0])
   const [activeTier, setActiveTier] = useState('all')
@@ -709,8 +711,9 @@ export default function AIAgents() {
         : `${Math.max(1, Math.round(file.size / 1024))} KB`
 
       try {
+        const targetCaseId = activeCase?.id || (cases && cases.length > 0 ? cases[0].id : 1)
         const created = await evidenceApi.uploadEvidence(file, {
-          caseId: 1,
+          caseId: targetCaseId,
           agentType: selectedAgent.id,
         })
         const sha256 = created.sha256_hash || generateMockSha256(file.name, file.size)

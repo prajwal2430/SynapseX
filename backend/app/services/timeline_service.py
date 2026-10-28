@@ -207,6 +207,7 @@ class TimelineService:
             page_size=page_size,
             total_pages=math.ceil(total / page_size) if total > 0 else 0,
             observed_events=observed_event_models,
+            events=observed_event_models,
             time_clusters=cluster_models,
             possible_sequences=sequence_models,
         )

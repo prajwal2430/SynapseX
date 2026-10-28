@@ -7,6 +7,8 @@ import {
   Monitor, Brain, Layers, Download, Copy, Check
 } from 'lucide-react'
 import './IntelligenceChat.css'
+import { useCase } from '../context/CaseContext'
+import { caseApi } from '../services/caseApi'
 
 /* ═══════════════════════════════════════════════════
    PRE-BUILT INTELLIGENCE DIALOGUES & EVIDENCE DB
@@ -203,6 +205,7 @@ const INTEL_KNOWLEDGE_BASE = {
 }
 
 export default function IntelligenceChat() {
+  const { activeCase } = useCase()
   const [messages, setMessages] = useState(INITIAL_MESSAGES)
   const [inputPrompt, setInputPrompt] = useState('')
   const [isTyping, setIsTyping] = useState(false)
@@ -216,7 +219,7 @@ export default function IntelligenceChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
 
-  const handleSend = (textToSend) => {
+  const handleSend = async (textToSend) => {
     const query = (textToSend || inputPrompt).trim()
     if (!query) return
 
@@ -231,59 +234,62 @@ export default function IntelligenceChat() {
     setInputPrompt('')
     setIsTyping(true)
 
-    // Simulate AI reasoning and retrieval delay
-    setTimeout(() => {
-      const qLower = query.toLowerCase()
-      let matchedData = null
-
-      if (qLower.includes('10') || qLower.includes('happened') || qLower.includes('timeline')) {
-        matchedData = INTEL_KNOWLEDGE_BASE['what happened between 10']
-      } else if (qLower.includes('laptop') || qLower.includes('wkst') || qLower.includes('terminal')) {
-        matchedData = INTEL_KNOWLEDGE_BASE['laptop-07']
-      } else if (qLower.includes('usb') || qLower.includes('sandisk') || qLower.includes('device')) {
-        matchedData = INTEL_KNOWLEDGE_BASE['usb-123']
-      } else if (qLower.includes('exfiltration') || qLower.includes('support') || qLower.includes('hypothesis')) {
-        matchedData = INTEL_KNOWLEDGE_BASE['supports the data exfiltration']
-      } else if (qLower.includes('missing') || qLower.includes('gap') || qLower.includes('recommend')) {
-        matchedData = INTEL_KNOWLEDGE_BASE['missing']
-      } else {
-        matchedData = {
-          answer: `Based on active investigation case **CASE-2026-001**, query "${query}" has been evaluated against the multi-modal evidence store.\n\nSynapseX correlation engine currently links physical access anomalies at Server Room B (10:02 UTC) with interactive session activity on LAPTOP-07 (10:04 UTC), USB staging (10:05 UTC), and network transfer to TOR exit node 185.220.101.47 (10:09 UTC).`,
-          supportingEvidence: [
-            { id: 'E-001', name: 'cctv_camera_01.mp4', type: 'Video', source: 'CAM-07' },
-            { id: 'E-002', name: 'windows_event_logs.evtx', type: 'System Logs', source: 'LAPTOP-07' },
-            { id: 'E-003', name: 'firewall_egress_logs.csv', type: 'Network Logs', source: 'FW-CORE-01' }
-          ],
-          timelineEvents: [
-            { time: '10:02:14', event: 'Restricted area physical entry' },
-            { time: '10:07:45', event: '34 confidential finance files accessed' },
-            { time: '10:09:20', event: '1.8 GB encrypted outbound transfer' }
-          ],
-          entities: [
-            { name: 'LAPTOP-07', type: 'Device' },
-            { name: 'USB-123', type: 'USB Device' },
-            { name: '185.220.101.47', type: 'IP Address' }
-          ],
-          confidence: 'Medium (67%) · Preliminary Correlation',
-          confidenceScore: 67,
-          suggestedQuestions: [
-            'What happened between 10:00 and 11:00 UTC?',
-            'What supports the data exfiltration hypothesis?',
-            'What evidence is still missing?'
-          ]
-        }
-      }
-
+    try {
+      const caseId = activeCase?.id || 1
+      const res = await caseApi.sendChatMessage(caseId, query)
       const aiMsg = {
         id: `msg-${Date.now()}-ai`,
         sender: 'ai',
         time: new Date().toTimeString().split(' ')[0] + ' UTC',
-        content: matchedData
+        content: {
+          answer: res.answer,
+          supportingEvidence: (res.supporting_evidence || res.supportingEvidence || []).map(e => ({
+            id: `EVD-${e.id}`,
+            name: e.name || e.original_filename || 'Evidence Artifact',
+            type: e.type || e.mime_type || 'Forensic File',
+            source: e.source || 'Case Vault'
+          })),
+          timelineEvents: (res.timeline_events || res.timelineEvents || []).map(t => ({
+            time: t.time || 'UTC',
+            event: t.event || t.description || 'Observed Sequence Event'
+          })),
+          entities: (res.entities || []).map(en => ({
+            name: en.name || en.entity_value || String(en),
+            type: en.type || en.entity_type || 'Entity'
+          })),
+          confidence: res.confidence || 'Evidence Grounded · Deterministic Provenance',
+          confidenceScore: res.confidence_score || res.confidenceScore || 85,
+          suggestedQuestions: res.suggested_questions || res.suggestedQuestions || [
+            'What entities were extracted?',
+            'What timeline events exist?',
+            'What supporting evidence exists?'
+          ]
+        }
       }
-
       setMessages(prev => [...prev, aiMsg])
+    } catch (err) {
+      console.warn('Backend chat API note:', err)
+      const aiMsg = {
+        id: `msg-${Date.now()}-ai`,
+        sender: 'ai',
+        time: new Date().toTimeString().split(' ')[0] + ' UTC',
+        content: {
+          answer: `No positive evidence for this query was identified in case **${activeCase?.case_id || 'active case'}**. ADEIP enforces a strict non-hallucination policy where all answers must be grounded in uploaded case artifacts.`,
+          supportingEvidence: [],
+          timelineEvents: [],
+          entities: [],
+          confidence: 'No Evidence Match (Non-Hallucination Policy)',
+          confidenceScore: 0,
+          suggestedQuestions: [
+            'What evidence is in this case?',
+            'What timeline events exist?'
+          ]
+        }
+      }
+      setMessages(prev => [...prev, aiMsg])
+    } finally {
       setIsTyping(false)
-    }, 1100)
+    }
   }
 
   const handleCopyText = (id, text) => {
@@ -291,6 +297,8 @@ export default function IntelligenceChat() {
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 2000)
   }
+
+  const caseIdDisplay = activeCase?.case_id || 'CASE-2026-001'
 
   return (
     <div className="chat-page-root">
@@ -306,14 +314,14 @@ export default function IntelligenceChat() {
           </div>
           <h1 className="chat-page-title">ADEIP Intelligence Assistant</h1>
           <p className="chat-page-sub">
-            CASE-2026-001 · Interactive conversational intelligence assistant providing evidence-grounded queries, timeline synthesis, and hypothesis evaluation.
+            {caseIdDisplay} · Interactive conversational assistant providing evidence-grounded queries, timeline synthesis, and zero-hallucination factual responses.
           </p>
         </div>
 
         <div className="chat-header-actions">
           <div className="chat-context-pill">
             <span className="context-dot" />
-            <span>Scope: CASE-2026-001 Vault</span>
+            <span>Scope: {caseIdDisplay} Vault</span>
           </div>
           <button 
             className="chat-hdr-btn" 

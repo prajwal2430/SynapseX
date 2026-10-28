@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft, Upload, Cpu, FileText,
   ChevronRight, ChevronDown, Clock,
@@ -9,30 +9,11 @@ import {
   CheckCircle2, Circle, Loader2, BarChart3,
   Eye, Zap, Database, GitBranch, Share2,
   TrendingUp, RefreshCw, MoreHorizontal,
-  Flag, Star, Bookmark, Download, Play,
+  Flag, Star, Bookmark, Download, Play, FolderOpen,
 } from 'lucide-react'
+import { useCase } from '../context/CaseContext'
+import { caseApi } from '../services/caseApi'
 import './CaseWorkspace.css'
-
-/* ═══════════════════════════════════════════════════
-   STATIC MOCK DATA
-═══════════════════════════════════════════════════ */
-const CASE = {
-  id: 'CASE-2026-001',
-  name: 'Suspected Data Exfiltration',
-  status: 'active',
-  priority: 'critical',
-  type: 'Data Exfiltration',
-  investigator: 'Demo Investigator',
-  lead: 'Sr. Analyst',
-  team: ['Demo Investigator', 'J. Ramirez'],
-  created: '2026-08-20',
-  createdFull: '2026-08-20 08:00 UTC',
-  lastUpdated: '12m ago',
-  tlp: 'TLP:RED',
-  classification: 'CONFIDENTIAL',
-  description:
-    'Insider threat investigation involving suspected exfiltration of Q2 financial projections via an unregistered USB device and TOR network egress. Physical access anomalies recorded at Server Room B. AI correlation confidence at 67%.',
-}
 
 const PROGRESS_STAGES = [
   {
@@ -444,7 +425,7 @@ function IOCTable() {
 }
 
 /* ── Placeholder Tab ── */
-function TabPlaceholder({ icon: Icon, title, description }) {
+function TabPlaceholder({ icon: Icon, title, description, onOpen }) {
   return (
     <div className="ws-tab-placeholder">
       <div className="ws-tp-icon-wrap">
@@ -453,7 +434,7 @@ function TabPlaceholder({ icon: Icon, title, description }) {
       </div>
       <h3 className="ws-tp-title">{title}</h3>
       <p className="ws-tp-desc">{description}</p>
-      <button className="ws-tp-btn"><Play size={13}/> Open Module</button>
+      <button className="ws-tp-btn" onClick={onOpen}><Play size={13}/> Open Module</button>
     </div>
   )
 }
@@ -472,10 +453,70 @@ const TABS = [
 
 export default function CaseWorkspace() {
   const navigate = useNavigate()
+  const { caseId } = useParams()
+  const { cases, activeCase, selectCase } = useCase()
+  const [fetchedCase, setFetchedCase] = useState(null)
+  const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const [liveEvents, setLiveEvents] = useState(0)
   const [toastMsg, setToastMsg] = useState(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const liveCase = useMemo(() => {
+    return (cases || []).find(x => String(x.id) === String(caseId) || x.case_number === caseId || x.case_id === caseId) || 
+      (activeCase && (String(activeCase.id) === String(caseId) || activeCase.case_number === caseId) ? activeCase : null) || 
+      fetchedCase ||
+      activeCase ||
+      (cases && cases.length > 0 ? cases[0] : null)
+  }, [cases, caseId, activeCase, fetchedCase])
+
+  useEffect(() => {
+    let isMounted = true
+    const existing = (cases || []).find(x => String(x.id) === String(caseId) || x.case_number === caseId || x.case_id === caseId)
+    if (existing) {
+      selectCase(existing)
+      return
+    }
+    if (caseId) {
+      setLoading(true)
+      caseApi.getCase(caseId).then(data => {
+        if (isMounted && data) {
+          setFetchedCase(data)
+          selectCase(data)
+        }
+      }).catch(err => {
+        console.error('Failed to load case workspace:', err)
+      }).finally(() => {
+        if (isMounted) setLoading(false)
+      })
+    }
+    return () => { isMounted = false }
+  }, [caseId, cases, selectCase])
+
+  const currentCase = useMemo(() => {
+    if (!liveCase) return null
+    return {
+      id: liveCase.case_number || liveCase.case_id || `CASE-2026-${String(liveCase.id).padStart(3, '0')}`,
+      rawId: liveCase.id,
+      name: liveCase.title || 'Investigation Case',
+      status: liveCase.status?.toLowerCase() || 'active',
+      priority: liveCase.priority?.toLowerCase() || 'high',
+      type: liveCase.case_type || 'Data Exfiltration',
+      investigator: 'Lead Forensic Investigator',
+      lead: 'Lead Forensic Investigator',
+      team: ['Lead Forensic Investigator'],
+      created: liveCase.opened_date ? new Date(liveCase.opened_date).toISOString().slice(0, 10) : new Date(liveCase.created_at || Date.now()).toISOString().slice(0, 10),
+      createdFull: liveCase.created_at ? new Date(liveCase.created_at).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'Recently',
+      lastUpdated: 'Recently',
+      tlp: 'TLP:AMBER',
+      classification: 'CONFIDENTIAL',
+      description: liveCase.description || 'Active investigation case.',
+      evidenceCount: liveCase.evidence_count || 0,
+      findingCount: liveCase.finding_count || 0,
+      entityCount: liveCase.entity_count || 0,
+      riskScore: liveCase.priority === 'critical' ? 92 : liveCase.priority === 'high' ? 76 : liveCase.priority === 'medium' ? 52 : 25,
+    }
+  }, [liveCase])
 
   /* Simulate live event counter ticking */
   useEffect(() => {
@@ -487,10 +528,34 @@ export default function CaseWorkspace() {
     setIsRefreshing(true)
     setTimeout(() => {
       setIsRefreshing(false)
-      setToastMsg('Case workspace telemetry re-synchronized: 1,248 artifacts verified')
+      setToastMsg(`Case workspace telemetry re-synchronized: ${currentCase?.evidenceCount || 0} artifacts verified`)
       setTimeout(() => setToastMsg(null), 3000)
     }, 700)
   }
+
+  if (loading && !currentCase) {
+    return (
+      <div className="ws-root" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <Loader2 size={36} className="ev-spin" style={{ color: 'var(--accent)', marginBottom: '16px' }} />
+        <h3 style={{ color: 'var(--text)', fontSize: '16px' }}>Loading Investigation Workspace...</h3>
+      </div>
+    )
+  }
+
+  if (!currentCase) {
+    return (
+      <div className="ws-root" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '40px' }}>
+        <FolderOpen size={40} style={{ color: 'var(--text-muted)', marginBottom: '16px', opacity: 0.6 }} />
+        <h2 style={{ color: 'var(--text)', marginBottom: '8px' }}>Investigation Workspace Not Found</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>No active case matches ID <code>{caseId}</code></p>
+        <button className="inv-btn inv-btn--primary" onClick={() => navigate('/investigations')}>
+          <ArrowLeft size={14} /> Back to Investigations
+        </button>
+      </div>
+    )
+  }
+
+  const prioCls = currentCase.priority === 'critical' ? 'critical' : currentCase.priority === 'high' ? 'high' : 'medium'
 
   return (
     <div className="ws-root">
@@ -529,7 +594,7 @@ export default function CaseWorkspace() {
             <ArrowLeft size={13} /> Investigations
           </button>
           <ChevronRight size={12} className="ws-bc-sep" />
-          <span className="ws-bc-current">{CASE.id}</span>
+          <span className="ws-bc-current">{currentCase.id}</span>
           <ChevronRight size={12} className="ws-bc-sep" />
           <span className="ws-bc-leaf">Workspace</span>
         </div>
@@ -538,25 +603,25 @@ export default function CaseWorkspace() {
         <div className="ws-header-main">
           <div className="ws-header-left">
             <div className="ws-case-id-row">
-              <span className="ws-case-id">{CASE.id}</span>
-              <span className="ws-tlp ws-tlp--red">{CASE.tlp}</span>
-              <span className="ws-class">{CASE.classification}</span>
+              <span className="ws-case-id">{currentCase.id}</span>
+              <span className={`ws-tlp ws-tlp--${currentCase.tlp.includes('RED') ? 'red' : 'amber'}`}>{currentCase.tlp}</span>
+              <span className="ws-class">{currentCase.classification}</span>
               <span className="ws-status-badge">
                 <span className="pulse-dot" style={{width:6,height:6}}/>
-                ACTIVE
+                {currentCase.status.toUpperCase()}
               </span>
-              <span className="ws-priority-badge ws-priority-badge--critical">
+              <span className={`ws-priority-badge ws-priority-badge--${prioCls}`}>
                 <span className="ws-priority-dot"/>
-                CRITICAL
+                {currentCase.priority.toUpperCase()}
               </span>
             </div>
-            <h1 className="ws-case-title">{CASE.name}</h1>
+            <h1 className="ws-case-title">{currentCase.name}</h1>
             <div className="ws-header-meta">
-              <span className="ws-meta-item"><Users size={11}/> {CASE.investigator}</span>
+              <span className="ws-meta-item"><Users size={11}/> {currentCase.investigator}</span>
               <span className="ws-meta-sep"/>
-              <span className="ws-meta-item"><Shield size={11}/> {CASE.type}</span>
+              <span className="ws-meta-item"><Shield size={11}/> {currentCase.type}</span>
               <span className="ws-meta-sep"/>
-              <span className="ws-meta-item"><Clock size={11}/> Created {CASE.created}</span>
+              <span className="ws-meta-item"><Clock size={11}/> Created {currentCase.created}</span>
               <span className="ws-meta-sep"/>
               <LiveClock />
             </div>
@@ -672,15 +737,15 @@ export default function CaseWorkspace() {
                   <span className="ws-section-title"><Shield size={14}/> Case Summary</span>
                 </div>
                 <div className="ws-summary-body">
-                  <p className="ws-summary-desc">{CASE.description}</p>
+                  <p className="ws-summary-desc">{currentCase.description}</p>
                   <div className="ws-summary-grid">
                     {[
-                      { label: 'Case Type',      value: CASE.type },
-                      { label: 'Lead Analyst',   value: CASE.lead },
-                      { label: 'Opened',         value: CASE.createdFull },
-                      { label: 'Last Update',    value: CASE.lastUpdated },
-                      { label: 'Classification', value: CASE.classification },
-                      { label: 'TLP Marking',    value: CASE.tlp },
+                      { label: 'Case Type',      value: currentCase.type },
+                      { label: 'Lead Analyst',   value: currentCase.lead },
+                      { label: 'Opened',         value: currentCase.createdFull },
+                      { label: 'Last Update',    value: currentCase.lastUpdated },
+                      { label: 'Classification', value: currentCase.classification },
+                      { label: 'TLP Marking',    value: currentCase.tlp },
                     ].map(m => (
                       <div key={m.label} className="ws-summary-meta">
                         <span className="ws-summary-meta-label">{m.label}</span>
@@ -789,7 +854,8 @@ export default function CaseWorkspace() {
           <TabPlaceholder
             icon={HardDrive}
             title="Evidence Vault"
-            description="Browse, filter, and analyze all 1,248 evidence artifacts for CASE-2026-001. Hash verification, chain of custody, and forensic metadata included."
+            description={`Browse, filter, and analyze all evidence artifacts for ${currentCase.id}. Hash verification, chain of custody, and forensic metadata included.`}
+            onOpen={() => navigate('/evidence')}
           />
         )}
 
@@ -798,7 +864,8 @@ export default function CaseWorkspace() {
           <TabPlaceholder
             icon={GitBranch}
             title="Interactive Timeline"
-            description="Reconstruct the full chronological sequence of events. Drag to zoom, filter by source, and correlate events across all ingested artifacts."
+            description={`Reconstruct the full chronological sequence of events for ${currentCase.id}. Drag to zoom, filter by source, and correlate events.`}
+            onOpen={() => navigate('/timeline')}
           />
         )}
 
@@ -807,7 +874,8 @@ export default function CaseWorkspace() {
           <TabPlaceholder
             icon={Share2}
             title="Knowledge Graph"
-            description="Visualize entity relationships — suspects, devices, IPs, files — extracted from evidence. Navigate 34 mapped nodes and their connections."
+            description={`Visualize entity relationships — suspects, devices, IPs, files — extracted from evidence for ${currentCase.id}.`}
+            onOpen={() => navigate('/knowledge-graph')}
           />
         )}
 
@@ -817,12 +885,12 @@ export default function CaseWorkspace() {
             <div className="ws-findings-header">
               <div>
                 <h2 className="ws-findings-title">AI Findings</h2>
-                <p className="ws-findings-sub">Generated by NEXUS-7 · SynapseX-Forge-v3 · Last run: {new Date().toLocaleTimeString()}</p>
+                <p className="ws-findings-sub">Generated by NEXUS-7 · SynapseX-Forge-v3 · Case {currentCase.id}</p>
               </div>
-              <button className="ws-action-btn ws-action-btn--ghost"><RefreshCw size={13}/> Re-run Analysis</button>
+              <button className="ws-action-btn ws-action-btn--ghost" onClick={() => navigate('/ai-findings')}><Play size={13}/> Open AI Findings</button>
             </div>
             <div className="ws-findings-grid">
-              {AI_FINDINGS.map(f => <AIFindingCard key={f.id} finding={f}/>)}
+              {AI_FINDINGS.map(f => <AIFindingCard key={f.id} finding={f} onReview={() => navigate('/ai-findings')}/>)}
             </div>
           </div>
         )}
@@ -832,7 +900,8 @@ export default function CaseWorkspace() {
           <TabPlaceholder
             icon={FileText}
             title="Reports"
-            description="Generate court-admissible forensic reports, executive summaries, or full technical analyses. Export as PDF, STIX 2.1, or case package."
+            description={`Generate court-admissible forensic reports, executive summaries, or full technical analyses for ${currentCase.id}.`}
+            onOpen={() => navigate('/reports')}
           />
         )}
 

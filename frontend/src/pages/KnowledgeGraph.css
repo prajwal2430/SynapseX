@@ -431,14 +431,19 @@
   transition: all 0.2s ease;
 }
 
-.kg-node-ring--person   { stroke: #ec4899; }
-.kg-node-ring--device   { stroke: #3b82f6; }
-.kg-node-ring--account  { stroke: #06b6d4; }
-.kg-node-ring--usb      { stroke: #f59e0b; }
-.kg-node-ring--file     { stroke: #10b981; }
-.kg-node-ring--ip       { stroke: #ef4444; }
-.kg-node-ring--cloud    { stroke: #8b5cf6; }
-.kg-node-ring--location { stroke: #6366f1; }
+.kg-node-ring--case      { stroke: #6366f1; }
+.kg-node-ring--evidence  { stroke: #3b82f6; }
+.kg-node-ring--person    { stroke: #ec4899; }
+.kg-node-ring--device    { stroke: #06b6d4; }
+.kg-node-ring--account   { stroke: #14b8a6; }
+.kg-node-ring--usb       { stroke: #f59e0b; }
+.kg-node-ring--file      { stroke: #10b981; }
+.kg-node-ring--file_hash { stroke: #eab308; }
+.kg-node-ring--ip        { stroke: #ef4444; }
+.kg-node-ring--cloud     { stroke: #8b5cf6; }
+.kg-node-ring--location  { stroke: #6366f1; }
+.kg-node-ring--domain    { stroke: #38bdf8; }
+.kg-node-ring--generic   { stroke: #94a3b8; }
 
 .kg-node-ring--active {
   stroke-width: 3.5;
@@ -527,14 +532,19 @@
   justify-content: center;
   color: white;
 }
-.kg-panel-avatar--person   { background: rgba(236, 72, 153, 0.2); color: #ec4899; border: 1px solid #ec4899; }
-.kg-panel-avatar--device   { background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid #3b82f6; }
-.kg-panel-avatar--account  { background: rgba(6, 182, 212, 0.2); color: #06b6d4; border: 1px solid #06b6d4; }
-.kg-panel-avatar--usb      { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid #f59e0b; }
-.kg-panel-avatar--file     { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; }
-.kg-panel-avatar--ip       { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; }
-.kg-panel-avatar--cloud    { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; border: 1px solid #8b5cf6; }
-.kg-panel-avatar--location { background: rgba(99, 102, 241, 0.2); color: #6366f1; border: 1px solid #6366f1; }
+.kg-panel-avatar--case      { background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid #818cf8; }
+.kg-panel-avatar--evidence  { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid #60a5fa; }
+.kg-panel-avatar--person    { background: rgba(236, 72, 153, 0.2); color: #ec4899; border: 1px solid #ec4899; }
+.kg-panel-avatar--device    { background: rgba(6, 182, 212, 0.2); color: #06b6d4; border: 1px solid #06b6d4; }
+.kg-panel-avatar--account   { background: rgba(20, 184, 166, 0.2); color: #14b8a6; border: 1px solid #14b8a6; }
+.kg-panel-avatar--usb       { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid #f59e0b; }
+.kg-panel-avatar--file      { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; }
+.kg-panel-avatar--file_hash { background: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid #facc15; }
+.kg-panel-avatar--ip        { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; }
+.kg-panel-avatar--cloud     { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; border: 1px solid #8b5cf6; }
+.kg-panel-avatar--location  { background: rgba(99, 102, 241, 0.2); color: #6366f1; border: 1px solid #6366f1; }
+.kg-panel-avatar--domain    { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #38bdf8; }
+.kg-panel-avatar--generic   { background: rgba(148, 163, 184, 0.2); color: #94a3b8; border: 1px solid #94a3b8; }
 
 .kg-panel-type-tag {
   font-family: var(--font-mono);
@@ -681,14 +691,27 @@
   justify-content: center;
   flex-shrink: 0;
 }
-.kg-conn-avatar--person   { background: rgba(236, 72, 153, 0.15); color: #ec4899; }
-.kg-conn-avatar--device   { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
-.kg-conn-avatar--account  { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
-.kg-conn-avatar--usb      { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
-.kg-conn-avatar--file     { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-.kg-conn-avatar--ip       { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-.kg-conn-avatar--cloud    { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
-.kg-conn-avatar--location { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+.kg-conn-avatar--case      { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
+.kg-conn-avatar--evidence  { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+.kg-conn-avatar--person    { background: rgba(236, 72, 153, 0.15); color: #ec4899; }
+.kg-conn-avatar--device    { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+.kg-conn-avatar--account   { background: rgba(20, 184, 166, 0.15); color: #14b8a6; }
+.kg-conn-avatar--usb       { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.kg-conn-avatar--file      { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.kg-conn-avatar--file_hash { background: rgba(234, 179, 8, 0.15); color: #facc15; }
+.kg-conn-avatar--ip        { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.kg-conn-avatar--cloud     { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
+.kg-conn-avatar--location  { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+.kg-conn-avatar--domain    { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+.kg-conn-avatar--generic   { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+
+.kg-spin {
+  animation: kgSpinAnim 1s linear infinite;
+}
+@keyframes kgSpinAnim {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 .kg-conn-info {
   display: flex;
