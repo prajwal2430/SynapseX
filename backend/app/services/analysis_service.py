@@ -296,3 +296,38 @@ class AnalysisService:
             total=len(jobs),
             items=[cls._to_job_response(j) for j in jobs],
         )
+
+    @classmethod
+    def get_case_analysis_status(cls, db: Session, case_id: int, current_user: User) -> Dict[str, Any]:
+        """Returns the latest analysis execution status and metrics for a case."""
+        case = db.scalars(select(InvestigationCase).where(InvestigationCase.id == case_id)).first()
+        if not case:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Investigation case #{case_id} not found.",
+            )
+
+        latest_job = db.scalars(
+            select(AnalysisJob)
+            .where(AnalysisJob.case_id == case_id)
+            .order_by(AnalysisJob.created_at.desc())
+        ).first()
+
+        if not latest_job:
+            return {
+                "case_id": case_id,
+                "status": "idle",
+                "latest_analysis_id": None,
+                "message": "No AI analysis run has been executed for this case yet.",
+                "completed_at": None,
+            }
+
+        return {
+            "case_id": case_id,
+            "status": latest_job.status.value,
+            "latest_analysis_id": latest_job.id,
+            "error_message": latest_job.error_message,
+            "created_at": latest_job.created_at.isoformat() if latest_job.created_at else None,
+            "completed_at": latest_job.completed_at.isoformat() if latest_job.completed_at else None,
+        }
+

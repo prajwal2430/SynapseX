@@ -1,0 +1,60 @@
+/* ============================================================
+   SynapseX Skeleton Loader Styles
+   ============================================================ */
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.skeleton-card {
+  border-radius: var(--radius-lg);
+  border: var(--border-subtle);
+}
+
+.skeleton-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.skeleton-table-header {
+  height: 38px;
+  border-radius: var(--radius-sm);
+  width: 100%;
+}
+
+.skeleton-table-row {
+  height: 48px;
+  border-radius: var(--radius-sm);
+  width: 100%;
+}
+
+.skeleton-timeline-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.skeleton-timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.skeleton-glyph {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skeleton-timeline-card {
+  flex: 1;
+  height: 90px;
+  border-radius: var(--radius-md);
+}

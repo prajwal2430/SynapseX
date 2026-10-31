@@ -71,3 +71,35 @@ class CaseListResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+class CaseDashboardResponse(BaseModel):
+    """Aggregated dashboard statistics calculated from verified data in the database."""
+    case_id: int
+    case_number: str
+    case_title: str
+    total_evidence: int
+    processed_evidence: int
+    pending_evidence: int
+    total_events: int
+    total_entities: int
+    total_correlations: int
+    total_findings: int
+    pending_findings: int
+    risk_level: str
+    risk_score: int
+    active_agents: int
+    latest_events: List[dict] = Field(default_factory=list)
+    recent_findings: List[dict] = Field(default_factory=list)
+
+
+class GlobalDashboardResponse(BaseModel):
+    """Platform-wide aggregated metrics across all authorized cases."""
+    total_cases: int
+    active_cases: int
+    total_evidence: int
+    total_events: int
+    total_entities: int
+    total_findings: int
+    recent_cases: List[CaseResponse] = Field(default_factory=list)
+

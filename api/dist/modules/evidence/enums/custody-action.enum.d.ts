@@ -1,9 +1,0 @@
-export declare enum CustodyAction {
-    COLLECTED = "COLLECTED",
-    UPLOADED = "UPLOADED",
-    HASH_VERIFIED = "HASH_VERIFIED",
-    ACCESSED = "ACCESSED",
-    TRANSFERRED = "TRANSFERRED",
-    ANALYZED = "ANALYZED",
-    DISPOSED = "DISPOSED"
-}

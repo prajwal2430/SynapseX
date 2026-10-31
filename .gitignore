@@ -1,34 +1,75 @@
-# Environment variables
+# ==============================================================================
+# SynapseX Monorepo Root .gitignore
+# ==============================================================================
+
+# Environment variable files
 .env
+.env.*
 *.env
 !.env.example
+!client/.env.example
+!api/.env.example
+!ai-service/.env.example
+!infrastructure/.env.example
+!frontend/.env.example
 !backend/.env.example
 
-# Python
-backend/__pycache__/
-backend/*/__pycache__/
-backend/*/*/__pycache__/
+# Node.js & Frontend build outputs
+node_modules/
+dist/
+dist-ssr/
+build/
+.npm/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python & AI Service
+__pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
 .venv/
 venv/
 env/
+ENV/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
 
-# Node
-frontend/node_modules/
-frontend/dist/
-frontend/dist-ssr/
-*.local
+# Docker & Infrastructure
+docker-compose.override.yml
+*.sock
 
-# Logs & Storage
+# Logs, Storage & Cache
+logs/
 *.log
 uploads/
 backend/uploads/
 storage/
 .cache/
-.pytest_cache/
+tmp/
+scratch/
+adeip.db
 
-# IDE / OS
-.vscode/
-.idea/
+# OS & Editor
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local-only utility scripts & generated documents (do not push)
+generate_viva_pdf.py
+*_Viva_Preparation_Master_Guide.pdf
+*_Implementation_Plan*.pdf
+*_Plan*.pdf

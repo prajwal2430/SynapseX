@@ -245,16 +245,29 @@ class SimulationService:
         )
 
         # Launch background asynchronous generator task
-        task = asyncio.create_task(
-            cls._run_simulation_loop(
-                case_id=case_id,
-                user_id=current_user.id,
-                step_delay=req.step_delay_seconds,
-                auto_correlate=req.auto_correlate,
-                auto_reason=req.auto_reason,
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(
+                cls._run_simulation_loop(
+                    case_id=case_id,
+                    user_id=current_user.id,
+                    step_delay=req.step_delay_seconds,
+                    auto_correlate=req.auto_correlate,
+                    auto_reason=req.auto_reason,
+                )
             )
-        )
-        cls._active_tasks[case_id] = task
+            cls._active_tasks[case_id] = task
+        except RuntimeError:
+            task = asyncio.create_task(
+                cls._run_simulation_loop(
+                    case_id=case_id,
+                    user_id=current_user.id,
+                    step_delay=req.step_delay_seconds,
+                    auto_correlate=req.auto_correlate,
+                    auto_reason=req.auto_reason,
+                )
+            )
+            cls._active_tasks[case_id] = task
 
         logger.info(f"[SimulationService] Demonstration event generator started for Case #{case_id}.")
 
@@ -292,18 +305,22 @@ class SimulationService:
             cls._simulation_states[case_id]["message"] = "Simulation stopped by investigator."
 
         # Broadcast WebSocket update
-        asyncio.create_task(
-            ws_manager.broadcast_to_case(
-                case_id=case_id,
-                event_type="simulation_stopped",
-                data={
-                    "case_id": case_id,
-                    "is_simulated": True,
-                    "disclaimer": _SIMULATION_DISCLAIMER,
-                    "message": "Simulation halted by user.",
-                },
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                ws_manager.broadcast_to_case(
+                    case_id=case_id,
+                    event_type="simulation_stopped",
+                    data={
+                        "case_id": case_id,
+                        "is_simulated": True,
+                        "disclaimer": _SIMULATION_DISCLAIMER,
+                        "message": "Simulation halted by user.",
+                    },
+                )
             )
-        )
+        except Exception:
+            pass
 
         AuditService.log(
             db=db,
@@ -349,7 +366,7 @@ class SimulationService:
                     evidence_number=f"SIM-EVD-{case_id}-001",
                     original_filename="SIMULATED_DEMO_CONTAINER.json",
                     stored_filename=f"sim_{case_id}_container.json",
-                    file_path=f"simulated/cases/{case_id}/container.json",
+                    storage_path=f"simulated/cases/{case_id}/container.json",
                     file_size=1024,
                     mime_type="application/json",
                     sha256_hash="0000simulated0000demonstration0000sha256hash0000",

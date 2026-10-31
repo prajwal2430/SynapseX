@@ -342,3 +342,28 @@ async def reprocess_evidence(
         current_user=current_user,
         client_ip=client_ip,
     )
+
+
+@evidence_router.delete(
+    "/{evidence_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Permanently delete an evidence artifact",
+)
+async def delete_evidence(
+    evidence_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Permanently deletes an evidence artifact, removes its file from secure disk storage,
+    cascades dependent records, and logs an immutable audit trail event.
+    """
+    client_ip = request.client.host if request.client else None
+    return EvidenceService.delete_evidence(
+        db=db,
+        evidence_id=evidence_id,
+        current_user=current_user,
+        client_ip=client_ip,
+    )
+

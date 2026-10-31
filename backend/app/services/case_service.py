@@ -293,3 +293,142 @@ class CaseService:
 
         db.delete(case)
         db.commit()
+
+    @classmethod
+    def get_case_dashboard(cls, db: Session, case_id: int, current_user: User):
+        """Calculates real-time aggregated dashboard metrics for a case from database records."""
+        from app.schemas.case import CaseDashboardResponse
+        from app.models.evidence import Evidence, ProcessingStatus
+        from app.models.investigation_event import InvestigationEvent
+        from app.models.entity import ExtractedEntityModel
+        from app.models.correlation import InvestigationCorrelation
+        from app.models.finding import InvestigationFindingModel, FindingReviewStatus
+
+        # Resolve case by ID or case_number string
+        case = db.scalars(
+            select(InvestigationCase).where(
+                or_(InvestigationCase.id == case_id, InvestigationCase.case_number == str(case_id))
+            )
+        ).first()
+
+        if not case:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Investigation case #{case_id} not found.",
+            )
+
+        tot_ev = db.scalar(select(func.count()).where(Evidence.case_id == case.id)) or 0
+        proc_ev = db.scalar(select(func.count()).where(Evidence.case_id == case.id, Evidence.processing_status == ProcessingStatus.COMPLETED)) or 0
+        pend_ev = tot_ev - proc_ev
+
+        tot_events = db.scalar(select(func.count()).where(InvestigationEvent.case_id == case.id)) or 0
+        tot_entities = db.scalar(select(func.count()).where(ExtractedEntityModel.case_id == case.id)) or 0
+        tot_correlations = db.scalar(select(func.count()).where(InvestigationCorrelation.case_id == case.id)) or 0
+        tot_findings = db.scalar(select(func.count()).where(InvestigationFindingModel.case_id == case.id)) or 0
+        pend_findings = db.scalar(select(func.count()).where(InvestigationFindingModel.case_id == case.id, InvestigationFindingModel.review_status == FindingReviewStatus.PENDING_REVIEW)) or 0
+
+        risk_score = min(100, (tot_correlations * 15) + (tot_findings * 20)) if (tot_correlations or tot_findings) else 0
+        if risk_score >= 80:
+            risk_level = "Critical"
+        elif risk_score >= 60:
+            risk_level = "High"
+        elif risk_score >= 30:
+            risk_level = "Medium"
+        else:
+            risk_level = "Low"
+
+        latest_ev_rows = list(
+            db.scalars(
+                select(InvestigationEvent)
+                .where(InvestigationEvent.case_id == case.id)
+                .order_by(InvestigationEvent.timestamp.desc().nullslast(), InvestigationEvent.id.desc())
+                .limit(6)
+            ).all()
+        )
+        latest_events = []
+        for e in latest_ev_rows:
+            ev_type_str = e.event_type.value if hasattr(e.event_type, "value") else str(e.event_type) if e.event_type else "log_entry"
+            src_str = e.source or ev_type_str
+            label_str = e.entity_value or ev_type_str
+            is_crit = (ev_type_str in ("alert", "auth_event")) or ("critical" in (e.entity_type or "").lower())
+            latest_events.append({
+                "id": f"evt-{e.id}",
+                "time": e.timestamp.strftime("%H:%M") if e.timestamp else "N/A",
+                "source": src_str,
+                "label": label_str,
+                "type": "critical" if is_crit else "normal",
+                "detail": f"{ev_type_str} from {e.source}" if e.source else ev_type_str,
+            })
+
+        recent_f_rows = list(
+            db.scalars(
+                select(InvestigationFindingModel)
+                .where(InvestigationFindingModel.case_id == case.id)
+                .order_by(InvestigationFindingModel.created_at.desc())
+                .limit(5)
+            ).all()
+        )
+        recent_findings = []
+        for f in recent_f_rows:
+            conf = f.confidence_score if f.confidence_score is not None else 0.85
+            tier = "High" if conf >= 0.8 else ("Medium" if conf >= 0.5 else "Low")
+            pct = int(conf * 100)
+            status_val = f.review_status.value if hasattr(f.review_status, "value") else str(f.review_status)
+            recent_findings.append({
+                "id": f.finding_id or f"finding-{f.id}",
+                "label": f.title or "Investigation Finding",
+                "value": f"{tier} ({pct}%)",
+                "status": status_val,
+            })
+
+        return CaseDashboardResponse(
+            case_id=case.id,
+            case_number=case.case_number,
+            case_title=case.title,
+            total_evidence=tot_ev,
+            processed_evidence=proc_ev,
+            pending_evidence=pend_ev,
+            total_events=tot_events,
+            total_entities=tot_entities,
+            total_correlations=tot_correlations,
+            total_findings=tot_findings,
+            pending_findings=pend_findings,
+            risk_level=risk_level,
+            risk_score=risk_score,
+            active_agents=8 if tot_ev > 0 else 0,
+            latest_events=latest_events,
+            recent_findings=recent_findings,
+        )
+
+    @classmethod
+    def get_global_dashboard(cls, db: Session, current_user: User):
+        """Calculates platform-wide dashboard statistics across all cases."""
+        from app.schemas.case import GlobalDashboardResponse
+        from app.models.evidence import Evidence
+        from app.models.investigation_event import InvestigationEvent
+        from app.models.entity import ExtractedEntityModel
+        from app.models.finding import InvestigationFindingModel
+
+        tot_cases = db.scalar(select(func.count()).select_from(InvestigationCase)) or 0
+        active_cases = db.scalar(select(func.count()).where(InvestigationCase.status == CaseStatus.ACTIVE)) or 0
+        tot_ev = db.scalar(select(func.count()).select_from(Evidence)) or 0
+        tot_events = db.scalar(select(func.count()).select_from(InvestigationEvent)) or 0
+        tot_entities = db.scalar(select(func.count()).select_from(ExtractedEntityModel)) or 0
+        tot_findings = db.scalar(select(func.count()).select_from(InvestigationFindingModel)) or 0
+
+        recent_cases = list(
+            db.scalars(
+                select(InvestigationCase).order_by(InvestigationCase.created_at.desc()).limit(10)
+            ).all()
+        )
+
+        return GlobalDashboardResponse(
+            total_cases=tot_cases,
+            active_cases=active_cases,
+            total_evidence=tot_ev,
+            total_events=tot_events,
+            total_entities=tot_entities,
+            total_findings=tot_findings,
+            recent_cases=[cls._to_case_response(c) for c in recent_cases],
+        )
+

@@ -87,6 +87,27 @@ def list_case_analyses(
     )
 
 
+@case_analysis_router.get(
+    "/{case_id}/analysis/status",
+    status_code=status.HTTP_200_OK,
+    summary="Get active/latest AI Multi-Agent analysis run status for a case",
+)
+def get_case_analysis_status(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Retrieves the execution status of the most recent AI multi-agent analysis for a case.
+    """
+    return AnalysisService.get_case_analysis_status(
+        db=db,
+        case_id=case_id,
+        current_user=current_user,
+    )
+
+
+
 @analysis_router.get(
     "/{analysis_id}",
     response_model=AnalysisJobResponse,

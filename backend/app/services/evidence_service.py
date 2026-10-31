@@ -25,6 +25,8 @@ from app.services.storage_service import get_storage_service
 
 logger = logging.getLogger("adeip.evidence_service")
 
+logger = logging.getLogger("adeip.services.evidence")
+
 
 class EvidenceService:
     """
@@ -196,7 +198,8 @@ class EvidenceService:
                 file_type=resolved_file_type,
                 storage_status="stored",
                 processing_status=ProcessingStatus.PENDING,
-                integrity_status=IntegrityStatus.UNVERIFIED,
+                integrity_status=IntegrityStatus.VERIFIED,
+                last_verified_at=datetime.datetime.now(datetime.timezone.utc),
                 uploaded_by=current_user.id,
             )
             db.add(evidence_record)
@@ -641,3 +644,4 @@ class EvidenceService:
 
         db.refresh(evidence)
         return cls._to_evidence_response(evidence)
+

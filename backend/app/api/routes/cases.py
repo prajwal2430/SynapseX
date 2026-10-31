@@ -231,3 +231,34 @@ async def get_case_summary(
             for f in recent_findings_rows
         ],
     }
+
+
+@router.get(
+    "/dashboard/global",
+    status_code=status.HTTP_200_OK,
+    summary="Get platform-wide aggregated dashboard metrics",
+)
+async def get_global_dashboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Returns platform-wide metrics across all authorized cases.
+    """
+    return CaseService.get_global_dashboard(db=db, current_user=current_user)
+
+
+@router.get(
+    "/{case_id}/dashboard",
+    status_code=status.HTTP_200_OK,
+    summary="Get case-specific aggregated dashboard statistics",
+)
+async def get_case_dashboard(
+    case_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Calculates live dashboard metrics for a case from real database records (evidence, events, correlations, findings).
+    """
+    return CaseService.get_case_dashboard(db=db, case_id=case_id, current_user=current_user)

@@ -185,3 +185,119 @@ def test_report_html_renderer(rich_investigation_state):
     assert "7. AI-Assisted Findings" in html
     assert "11. Investigator Review Status" in html
     assert "12. Limitations &amp; Uncertainty" in html or "12. Limitations" in html
+
+
+def test_report_generate_request_schema_and_status():
+    """Verify ReportGenerateRequest supports evidence/findings filters and ReportResponse includes status."""
+    from app.schemas.report import ReportGenerateRequest, ReportResponse
+    import datetime
+
+    req = ReportGenerateRequest(
+        title="Custom Report Title",
+        report_format=ReportFormat.HTML,
+        evidence_ids=[1, 2],
+        finding_ids=["FND-101-AA"],
+    )
+    assert req.title == "Custom Report Title"
+    assert req.evidence_ids == [1, 2]
+    assert req.finding_ids == ["FND-101-AA"]
+
+    resp = ReportResponse(
+        id=1,
+        report_id="RPT-1-ABC",
+        case_id=101,
+        title="Custom Report Title",
+        report_format=ReportFormat.HTML,
+        status="completed",
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    assert resp.status == "completed"
+    assert resp.report_id == "RPT-1-ABC"
+
+
+def test_pdf_report_rendering(rich_investigation_state):
+    """Verify that ReportService._render_pdf_report compiles a valid PDF binary with all sections."""
+    from app.services.report_service import ReportService
+    from app.agents.report_agent import report_agent
+
+    rep_res = report_agent(rich_investigation_state)
+    structured_data = rep_res.get("structured_report", {})
+
+    pdf_bytes = ReportService._render_pdf_report(
+        data=structured_data,
+        title="Automated Forensic Report",
+        report_id="RPT-TEST-001",
+        case_id=1,
+    )
+
+    assert isinstance(pdf_bytes, bytes)
+    assert len(pdf_bytes) > 500
+    assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_renderer_resilience_with_none_values_and_unicode():
+    """Verify that _render_html_report and _render_pdf_report gracefully handle None confidence, None scores, and unicode symbols."""
+    from app.services.report_service import ReportService
+
+    edge_data = {
+        "disclaimer": "AI-Assisted Draft — Requires Human Investigator Review",
+        "case_summary": {
+            "case_number": "CASE-TEST-001",
+            "title": "Unicode Test: Process Injection → Exfiltration",
+            "description": "Observed lateral movement with arrows: 10.0.0.1 -> 10.0.0.2.",
+            "priority": "high",
+            "status": "active",
+        },
+        "evidence_inventory": [
+            {
+                "id": 1,
+                "evidence_number": "EVD-001",
+                "original_filename": "artifact_log.evtx",
+                "mime_type": "application/octet-stream",
+                "processing_status": "completed",
+            }
+        ],
+        "evidence_integrity_status": [],
+        "investigation_timeline": [],
+        "entity_relationships": {"total_entities": 0, "entities_by_type": {}},
+        "correlations": [
+            {
+                "correlation_id": "CORR-01",
+                "title": "Time Correlation",
+                "description": "Suspicious login correlation",
+                "signal_type": "auth_anomaly",
+                "score": None,  # None score test
+                "supporting_evidence_ids": [1],
+            }
+        ],
+        "ai_assisted_findings": [
+            {
+                "finding_id": "FND-01",
+                "title": "Unusual Process Execution → PowerShell",
+                "category": "Execution",
+                "description": "PowerShell invoked with encoded arguments.",
+                "confidence": None,  # None confidence test
+                "review_status": "pending_review",
+            }
+        ],
+        "supporting_evidence": [],
+        "alternative_explanations": ["Scheduled maintenance script."],
+        "recommended_verification": ["Verify scheduled tasks on host."],
+        "investigator_review_status": [],
+        "limitations": ["Limited forensic telemetry."],
+    }
+
+    # Verify HTML does not throw TypeError on None * 100
+    html = ReportService._render_html_report(edge_data)
+    assert "Unusual Process Execution" in html
+    assert "85%" in html  # fallback default
+
+    # Verify PDF does not throw TypeError on float(None) or FPDF UnicodeEncodeError
+    pdf_bytes = ReportService._render_pdf_report(
+        data=edge_data,
+        title="Resilience Test Dossier",
+        report_id="RPT-EDGE-001",
+        case_id=1,
+    )
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes.startswith(b"%PDF")

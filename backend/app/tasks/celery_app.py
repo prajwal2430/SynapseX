@@ -48,6 +48,11 @@ def create_celery_app() -> Celery:
         # Routing: all ADEIP tasks go to the default evidence queue
         task_default_queue="adeip_evidence",
 
+        # Fast broker timeout to prevent HTTP requests from hanging if broker is unavailable
+        broker_connection_timeout=0.5,
+        broker_connection_retry_on_startup=False,
+        broker_connection_max_retries=0,
+
         # Retry defaults
         task_max_retries=3,
         task_default_retry_delay=30,  # seconds between retries

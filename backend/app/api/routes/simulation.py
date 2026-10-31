@@ -27,7 +27,7 @@ router = APIRouter(prefix="/cases", tags=["Investigation Simulation Generator (D
     status_code=status.HTTP_200_OK,
     summary="Start controlled simulated investigation event sequence (Demonstration Only)",
 )
-def start_case_simulation(
+async def start_case_simulation(
     case_id: int,
     req: SimulationStartRequest,
     request: Request,
@@ -65,7 +65,7 @@ def start_case_simulation(
     status_code=status.HTTP_200_OK,
     summary="Stop and cancel a running demonstration simulation",
 )
-def stop_case_simulation(
+async def stop_case_simulation(
     case_id: int,
     request: Request,
     db: Session = Depends(get_db),

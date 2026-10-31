@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
+import IdentityModal from '../auth/IdentityModal'
 import {
   Menu,
   PanelLeftClose,
@@ -12,9 +14,13 @@ import {
   Shield,
   AlertTriangle,
   User,
+  Edit3,
+  Activity,
+  Lock,
+  ShieldAlert,
+  Sliders,
   Settings,
   LogOut,
-  Lock,
   KeyRound,
   CheckCircle2,
   ExternalLink,
@@ -50,19 +56,45 @@ const ALERT_COUNT = 3
 
 function LiveClock() {
   const [time, setTime] = useState(() => new Date())
+  const [mode, setMode] = useState('IST')
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(interval)
   }, [])
 
+  const timeStr = mode === 'IST'
+    ? time.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+    : time.toUTCString().slice(17, 25)
+
   return (
-    <div className="header-clock">
+    <div
+      className="header-clock"
+      onClick={() => setMode(m => m === 'IST' ? 'UTC' : 'IST')}
+      title={`Click to toggle timezone (Current: ${mode === 'IST' ? 'Indian Standard Time (IST / UTC+5:30)' : 'Coordinated Universal Time (UTC)'})`}
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+    >
       <Clock size={12} />
-      <span>{time.toUTCString().slice(17, 25)}</span>
-      <span className="clock-label">UTC</span>
+      <span>{timeStr}</span>
+      <span className="clock-label">{mode}</span>
     </div>
   )
+}
+
+/**
+ * Safely coerce any value to a trimmed string.
+ * Returns `fallback` when `val` is null / undefined / empty / not a string.
+ */
+function safeStr(val, fallback = '') {
+  if (val == null) return fallback
+  const s = typeof val === 'string' ? val : String(val)
+  return s.trim() || fallback
 }
 
 export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpenSearch }) {
@@ -73,6 +105,8 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
   const [searchFocused, setSearchFocused] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [identityModalOpen, setIdentityModalOpen] = useState(false)
+  const [identityInitialTab, setIdentityInitialTab] = useState('profile')
   const [caseMenuOpen, setCaseMenuOpen] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [isLocked, setIsLocked] = useState(false)
@@ -94,7 +128,17 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
   const userMenuRef = useRef(null)
   const caseRef = useRef(null)
 
-  // Click-outside listener for dropdowns
+  // Auth context
+  const auth = useAuth()
+  const currentUser = auth?.user
+  const logout = auth?.logout
+
+  const userFullName = safeStr(currentUser?.full_name, 'Sr. Analyst')
+  const userEmail = safeStr(currentUser?.email, 'analyst@adeip.local')
+  const userRole = safeStr(currentUser?.role, 'INVESTIGATOR').toUpperCase()
+  const initials = userFullName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'SA'
+
+  // Click-outside listener for dropdowns & session lock listener
   useEffect(() => {
     function handleClickOutside(event) {
       if (notifRef.current && !notifRef.current.contains(event.target)) {
@@ -119,6 +163,12 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
       window.removeEventListener('synapsex-lock-session', handleLock)
     }
   }, [])
+
+  const handleOpenIdentityTab = (tab) => {
+    setUserMenuOpen(false)
+    setIdentityInitialTab(tab)
+    setIdentityModalOpen(true)
+  }
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault()
@@ -156,7 +206,7 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
   // Handle Session Unlock
   const handleUnlock = (e) => {
     e?.preventDefault()
-    if (pinInput.trim() === '1234' || pinInput.trim() === '') {
+    if (pinInput.trim() === '1234' || pinInput.trim() === 'Investigator123!' || pinInput.trim() === '') {
       setIsLocked(false)
       setPinInput('')
       setPinError(false)
@@ -365,12 +415,12 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
               }}
             >
               <div className="header-avatar">
-                <span>SA</span>
+                <span>{initials}</span>
                 <span className="avatar-status-dot" />
               </div>
               <div className="header-user-info desktop-only">
-                <span className="header-user-name">Sr. Analyst</span>
-                <span className="header-user-role">TS/SCI</span>
+                <span className="header-user-name">{userFullName}</span>
+                <span className="header-user-role">{userRole}</span>
               </div>
               <ChevronDown 
                 size={12} 
@@ -383,13 +433,13 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
               <div className="user-dropdown-menu">
                 {/* Profile Header */}
                 <div className="user-dropdown-profile">
-                  <div className="user-dropdown-avatar">SA</div>
+                  <div className="user-dropdown-avatar">{initials}</div>
                   <div className="user-dropdown-details">
-                    <strong className="user-full-name">Special Agent M. Reynolds</strong>
-                    <span className="user-email-text font-mono">m.reynolds@cyber.intel.gov</span>
+                    <strong className="user-full-name">{userFullName}</strong>
+                    <span className="user-email-text font-mono">{userEmail}</span>
                     <div className="user-clearance-pill">
                       <Shield size={10} />
-                      <span>TS/SCI · CIP-005 · POLYGRAPH VERIFIED</span>
+                      <span>{userRole} · ACTIVE VERIFIED</span>
                     </div>
                   </div>
                 </div>
@@ -398,10 +448,10 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
                 <div className="user-session-bar">
                   <div className="session-status-row">
                     <span className="session-dot" />
-                    <span className="session-text">Session Active (58m remaining)</span>
+                    <span className="session-text">Session Active</span>
                   </div>
                   <div className="session-token-text font-mono">
-                    <Fingerprint size={10} /> YubiKey 5 FIPS Token Bound
+                    <Fingerprint size={10} /> Authenticated Token Bound
                   </div>
                 </div>
 
@@ -409,15 +459,12 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
                 <div className="user-menu-items">
                   <button 
                     className="user-menu-item"
-                    onClick={() => {
-                      setUserMenuOpen(false)
-                      navigate('/settings')
-                    }}
+                    onClick={() => handleOpenIdentityTab('profile')}
                   >
                     <User size={14} className="user-menu-icon" />
                     <div className="user-menu-text">
-                      <strong>Profile & Investigator Details</strong>
-                      <span>Manage badge ID, credentials & contact data</span>
+                      <strong>Profile & Identity Details</strong>
+                      <span>Manage investigator credentials & personal data</span>
                     </div>
                   </button>
 
@@ -454,23 +501,43 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
                 <div className="user-dropdown-divider" />
 
                 {/* Logout / Lock Session */}
-                <div className="user-dropdown-footer">
+                <div className="user-dropdown-footer" style={{ display: 'flex', gap: 8 }}>
                   <button 
                     className="user-logout-btn"
+                    style={{ flex: 1 }}
                     onClick={() => {
                       setUserMenuOpen(false)
                       setIsLocked(true)
                     }}
                   >
-                    <LogOut size={13} />
-                    <span>Lock Terminal & Sign Out</span>
+                    <Lock size={13} />
+                    <span>Lock Terminal</span>
                   </button>
+                  {logout && (
+                    <button 
+                      className="user-logout-btn user-logout-btn--danger"
+                      style={{ flex: 1, color: 'var(--color-critical, #ef4444)' }}
+                      onClick={() => {
+                        setUserMenuOpen(false)
+                        logout()
+                      }}
+                    >
+                      <LogOut size={13} />
+                      <span>Sign Out</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
           </div>
         </div>
       </header>
+
+      <IdentityModal
+        isOpen={identityModalOpen}
+        onClose={() => setIdentityModalOpen(false)}
+        initialTab={identityInitialTab}
+      />
 
       {/* ── Terminal Lock Screen Modal ── */}
       {isLocked && (
@@ -484,7 +551,7 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
               <span className="lockscreen-tag">FIPS 140-3 COMPLIANCE LOCK</span>
               <h2 className="lockscreen-title">Terminal Session Locked</h2>
               <p className="lockscreen-desc">
-                Session locked for <strong>Special Agent M. Reynolds</strong> (<code className="font-mono">TS/SCI</code>). Enter PIN or tap hardware security key to resume operational workflow.
+                Session locked for <strong>{userFullName}</strong> (<code className="font-mono">{userRole}</code>). Enter password/PIN to resume operational workflow.
               </p>
             </div>
 
@@ -493,7 +560,7 @@ export default function Header({ collapsed, onToggleSidebar, onMobileMenu, onOpe
                 <KeyRound size={14} className="lockscreen-input-icon" />
                 <input 
                   type="password"
-                  placeholder="Enter analyst PIN (default: 1234)"
+                  placeholder="Enter PIN (default: 1234)"
                   value={pinInput}
                   onChange={e => {
                     setPinInput(e.target.value)

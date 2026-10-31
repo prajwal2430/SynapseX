@@ -9,6 +9,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.audit_logs import router as audit_logs_router
 from app.api.routes.cases import router as cases_router
 from app.api.routes.correlations import router as correlations_router
+from app.api.routes.data_sources import case_sources_router, direct_sources_router
 from app.api.routes.entities import case_entity_router, evidence_entity_router
 from app.api.routes.evidence import case_evidence_router, evidence_router
 from app.api.routes.findings import case_finding_router, finding_router
@@ -42,15 +43,49 @@ logger = logging.getLogger("adeip.backend")
 async def lifespan(app: FastAPI):
     """
     Application lifespan context manager:
-    - Startup: Initializes MongoDB Motor connection and verifies connectivity.
+    - Startup: Initializes database schema, seeds default user, and connects MongoDB.
     - Shutdown: Closes MongoDB connection pool cleanly.
     """
     # ── Startup Phase ────────────────────────────────────────────────────────
     logger.info("[Lifespan] Starting ADEIP backend application...")
-    from app.database.migrate_evidence_columns import ensure_evidence_columns
-    ensure_evidence_columns()
-    from app.database.migrate_forensic_pipeline import migrate_forensic_pipeline_columns
-    migrate_forensic_pipeline_columns()
+    try:
+        from app.database.base import Base
+        from app.database.session import engine, SessionLocal
+        from app.models.user import User, UserRole
+        from app.security.password import hash_password
+        from sqlalchemy import select
+
+        Base.metadata.create_all(bind=engine)
+        logger.info("[Lifespan] Database tables verified/created.")
+
+        # Seed default authorized lead investigator if none exists
+        with SessionLocal() as db:
+            existing_user = db.scalars(select(User)).first()
+            if not existing_user:
+                lead_user = User(
+                    full_name="Sr. Analyst (Lead Investigator)",
+                    email="analyst@adeip.local",
+                    password_hash=hash_password("Investigator123!"),
+                    role=UserRole.INVESTIGATOR,
+                    is_active=True,
+                )
+                db.add(lead_user)
+                db.commit()
+                logger.info("[Lifespan] Default authorized investigator seeded: analyst@adeip.local")
+    except Exception as exc:
+        logger.warning(f"[Lifespan] Database table initialization / seed note: {exc}")
+
+    try:
+        from app.database.migrate_evidence_columns import ensure_evidence_columns
+        ensure_evidence_columns()
+    except Exception as exc:
+        logger.warning(f"[Lifespan] Evidence column migration note: {exc}")
+
+    try:
+        from app.database.migrate_forensic_pipeline import migrate_forensic_pipeline_columns
+        migrate_forensic_pipeline_columns()
+    except Exception as exc:
+        logger.warning(f"[Lifespan] Forensic pipeline migration note: {exc}")
     await mongo_manager.connect_to_mongo()
     await mongo_manager.init_collection_indexes()
 
@@ -60,6 +95,7 @@ async def lifespan(app: FastAPI):
     logger.info("[Lifespan] Shutting down ADEIP backend application...")
     await mongo_manager.close_mongo_connection()
     logger.info("[Lifespan] Application shutdown complete.")
+
 
 
 # Initialize FastAPI application
@@ -130,6 +166,8 @@ async def root():
 app.include_router(health_router, prefix="/api")
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(cases_router, prefix="/api")
+app.include_router(case_sources_router, prefix="/api")
+app.include_router(direct_sources_router, prefix="/api")
 app.include_router(case_evidence_router, prefix="/api")
 app.include_router(evidence_router, prefix="/api")
 app.include_router(processing_router, prefix="/api")
